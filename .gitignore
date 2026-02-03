@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Data
+data/checkpoints/*
+data/output/*
+*.csv
+*.parquet
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+
+# Docker
+docker-compose.override.yml
+
+# macOS
+.DS_Store
+
+# AWS
+.aws/
+
+# Spark
+spark-warehouse/
+metastore_db/
+derby.log

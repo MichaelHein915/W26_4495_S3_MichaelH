@@ -1,0 +1,23 @@
+# Kafka
+kafka-python==2.0.2
+
+# WebSocket
+websocket-client==1.6.4
+
+# PySpark (will be in Docker container, but useful for local development)
+pyspark==3.5.0
+
+# AWS
+boto3==1.34.19
+s3fs==2024.2.0
+
+# Data Processing
+pandas==2.1.4
+numpy==1.26.3
+
+# Utilities
+python-dotenv==1.0.0
+requests==2.31.0
+
+# Logging
+colorlog==6.8.0
