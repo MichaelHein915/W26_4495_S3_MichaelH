@@ -7,7 +7,8 @@ from pathlib import Path
 import websocket
 from kafka import KafkaProducer
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
+repo_root = Path(__file__).resolve().parents[2]
+sys.path.append(str(repo_root / "src"))
 from utils.config import get_config
 
 

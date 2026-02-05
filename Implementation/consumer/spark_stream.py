@@ -3,10 +3,11 @@ import sys
 from pathlib import Path
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, from_json
-from pyspark.sql.types import StringType, StructField, StructType
+from pyspark.sql.functions import col, from_json, to_timestamp, window
+from pyspark.sql.types import DoubleType, StringType, StructField, StructType
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
+repo_root = Path(__file__).resolve().parents[2]
+sys.path.append(str(repo_root / "src"))
 from utils.config import get_config
 
 
@@ -58,11 +59,29 @@ def main() -> None:
         .where(col("price").isNotNull())
     )
 
+    metrics_stream = (
+        parsed_stream.withColumn("event_time", to_timestamp(col("time")))
+        .withColumn("price_usd", col("price").cast(DoubleType()))
+        .where(col("event_time").isNotNull())
+        .where(col("price_usd").isNotNull())
+        .groupBy(window(col("event_time"), "1 minute"), col("product_id"))
+        .agg({"price_usd": "avg", "*": "count"})
+        .withColumnRenamed("avg(price_usd)", "avg_price_usd")
+        .withColumnRenamed("count(1)", "trade_count")
+        .select(
+            "product_id",
+            "trade_count",
+            "avg_price_usd",
+            col("window.start").alias("window_start"),
+            col("window.end").alias("window_end"),
+        )
+    )
+
     query = (
-        parsed_stream.writeStream.format("console")
+        metrics_stream.writeStream.format("console")
         .option("truncate", "false")
         .option("checkpointLocation", checkpoint_dir)
-        .outputMode("append")
+        .outputMode("update")
         .start()
     )
 

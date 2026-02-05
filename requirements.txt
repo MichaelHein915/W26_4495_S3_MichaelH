@@ -1,5 +1,5 @@
 # Kafka
-kafka-python==2.0.2
+kafka-python-ng==2.2.2
 
 # WebSocket
 websocket-client==1.6.4
@@ -12,8 +12,9 @@ boto3==1.34.19
 s3fs==2024.2.0
 
 # Data Processing
-pandas==2.1.4
-numpy==1.26.3
+pandas==2.2.3
+numpy==2.3.5
+streamlit>=1.32.0
 
 # Utilities
 python-dotenv==1.0.0
