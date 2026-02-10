@@ -1,6 +1,7 @@
 import os
 import sys
 from pathlib import Path
+from shutil import rmtree
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, from_json, to_timestamp, window
@@ -16,6 +17,7 @@ checkpoint_dir = os.getenv(
     "CHECKPOINT_DIR",
     str(Path(__file__).resolve().parents[2] / "data" / "checkpoints" / "raw_console"),
 )
+reset_checkpoint = os.getenv("RESET_CHECKPOINT", "").lower() in {"1", "true", "yes"}
 spark_log_level = os.getenv("SPARK_LOG_LEVEL", "WARN")
 
 
@@ -31,6 +33,12 @@ def _build_spark_session() -> SparkSession:
 
 
 def main() -> None:
+    if reset_checkpoint:
+        checkpoint_path = Path(checkpoint_dir)
+        if checkpoint_path.exists():
+            # Reset corrupted or stale checkpoints for local dev runs.
+            rmtree(checkpoint_path)
+
     spark = _build_spark_session()
     spark.sparkContext.setLogLevel(spark_log_level.upper())
 

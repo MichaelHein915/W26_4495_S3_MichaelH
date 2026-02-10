@@ -50,15 +50,52 @@ def _prune_events(events: deque, cutoff: datetime) -> None:
 
 def _compute_metrics(events: deque) -> pd.DataFrame:
     if not events:
-        return pd.DataFrame(columns=["product_id", "trade_count", "avg_price_usd"])
+        return pd.DataFrame(
+            columns=[
+                "product_id",
+                "trade_count",
+                "avg_price_usd",
+                "vwap_usd",
+                "volatility_usd",
+                "total_volume_qty",
+            ]
+        )
     df = pd.DataFrame(list(events))
     metrics = (
         df.groupby("product_id", as_index=False)
-        .agg(trade_count=("price_usd", "count"), avg_price_usd=("price_usd", "mean"))
+        .agg(
+            trade_count=("price_usd", "count"),
+            avg_price_usd=("price_usd", "mean"),
+            total_volume_qty=("size_qty", "sum"),
+            total_notional_usd=("notional_usd", "sum"),
+            volatility_usd=("price_usd", "std"),
+        )
         .sort_values("product_id")
     )
+
+    metrics["vwap_usd"] = metrics["avg_price_usd"]
+    has_volume = metrics["total_volume_qty"] > 0
+    metrics.loc[has_volume, "vwap_usd"] = (
+        metrics.loc[has_volume, "total_notional_usd"]
+        / metrics.loc[has_volume, "total_volume_qty"]
+    )
+
+    metrics["volatility_usd"] = metrics["volatility_usd"].fillna(0.0)
     metrics["avg_price_usd"] = metrics["avg_price_usd"].round(2)
-    return metrics
+    metrics["vwap_usd"] = metrics["vwap_usd"].round(2)
+    metrics["volatility_usd"] = metrics["volatility_usd"].round(2)
+    metrics["total_volume_qty"] = metrics["total_volume_qty"].round(6)
+
+    return metrics[
+        [
+            "product_id",
+            "trade_count",
+            "avg_price_usd",
+            "vwap_usd",
+            "volatility_usd",
+            "total_volume_qty",
+        ]
+    ]
 
 
 def _compute_timeseries(events: deque) -> pd.DataFrame:
@@ -88,6 +125,31 @@ def _compute_latency_seconds(events: deque) -> float | None:
     return total / len(events)
 
 
+def _compute_volume_spikes(
+    metrics: pd.DataFrame, volume_history: dict[str, deque]
+) -> list[dict]:
+    alerts: list[dict] = []
+    for row in metrics.itertuples(index=False):
+        symbol = row.product_id
+        current_volume = float(row.total_volume_qty)
+        history = volume_history.setdefault(symbol, deque(maxlen=30))
+
+        if len(history) >= 5:
+            baseline = sum(history) / len(history)
+            if baseline > 0 and current_volume >= (2.0 * baseline):
+                alerts.append(
+                    {
+                        "product_id": symbol,
+                        "current_volume": current_volume,
+                        "baseline_volume": baseline,
+                        "spike_ratio": current_volume / baseline,
+                    }
+                )
+
+        history.append(current_volume)
+    return alerts
+
+
 def main() -> None:
     st.set_page_config(page_title="Crypto 3-Minute Metrics", layout="wide")
     st.title("Crypto 3-Minute Metrics (Live)")
@@ -103,10 +165,13 @@ def main() -> None:
         st.session_state.events = deque()
     if "last_event_time" not in st.session_state:
         st.session_state.last_event_time = None
+    if "volume_history" not in st.session_state:
+        st.session_state.volume_history = {}
 
     consumer = st.session_state.consumer
     events = st.session_state.events
     last_event_time = st.session_state.last_event_time
+    volume_history = st.session_state.volume_history
 
     poll_error = None
     polled_count = 0
@@ -128,10 +193,20 @@ def main() -> None:
                 price_value = float(price)
             except (TypeError, ValueError):
                 continue
+
+            # Coinbase ticker payload can include last_size (or size in some feeds).
+            raw_size = message.get("last_size", message.get("size", 0))
+            try:
+                size_qty = float(raw_size)
+            except (TypeError, ValueError):
+                size_qty = 0.0
+
             events.append(
                 {
                     "event_time": event_time,
                     "price_usd": price_value,
+                    "size_qty": size_qty,
+                    "notional_usd": price_value * size_qty,
                     "product_id": product_id,
                 }
             )
@@ -146,6 +221,7 @@ def main() -> None:
     metrics = _compute_metrics(events)
     timeseries = _compute_timeseries(events)
     latency_seconds = _compute_latency_seconds(events)
+    volume_spike_alerts = _compute_volume_spikes(metrics, volume_history)
     st.subheader("Rolling 3-Minute Summary")
     if poll_error:
         st.error(f"Kafka status: error polling ({poll_error})")
@@ -172,8 +248,37 @@ def main() -> None:
             st.warning(f"Avg event latency: {latency_seconds:.2f}s")
         else:
             st.error(f"Avg event latency: {latency_seconds:.2f}s")
+
+    freshness_seconds = None
+    if last_event_time:
+        freshness_seconds = (
+            datetime.now(timezone.utc) - last_event_time
+        ).total_seconds()
+
+    total_trades = int(metrics["trade_count"].sum()) if not metrics.empty else 0
+    total_volume = float(metrics["total_volume_qty"].sum()) if not metrics.empty else 0.0
+    live_symbols = int(metrics["product_id"].nunique()) if not metrics.empty else 0
+
+    kpi_1, kpi_2, kpi_3, kpi_4 = st.columns(4)
+    kpi_1.metric("Total Trades (3m)", f"{total_trades:,}")
+    kpi_2.metric("Live Symbols", f"{live_symbols}")
+    kpi_3.metric("Total Volume Qty (3m)", f"{total_volume:,.4f}")
+    if freshness_seconds is None:
+        kpi_4.metric("Data Freshness", "N/A")
+    else:
+        kpi_4.metric("Data Freshness", f"{freshness_seconds:.1f}s")
+
     st.dataframe(metrics, use_container_width=True)
     st.caption(f"Last updated: {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}")
+
+    if volume_spike_alerts:
+        st.subheader("Volume Spike Alerts")
+        for alert in volume_spike_alerts:
+            st.warning(
+                f"{alert['product_id']}: volume {alert['current_volume']:.4f} "
+                f"(baseline {alert['baseline_volume']:.4f}, "
+                f"{alert['spike_ratio']:.2f}x)"
+            )
 
     if not metrics.empty:
         chart_df = metrics.set_index("product_id")[["avg_price_usd", "trade_count"]]
