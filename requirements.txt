@@ -15,6 +15,7 @@ s3fs==2024.2.0
 pandas==2.2.3
 numpy==2.3.5
 streamlit>=1.32.0
+flask>=3.0.0
 
 # Utilities
 python-dotenv==1.0.0

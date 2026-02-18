@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Crypto 3-Minute Metrics (Live)</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <h1>Crypto 3-Minute Metrics</h1>
+      <div class="header-controls">
+        <label class="toggle">
+          <input type="checkbox" id="liveToggle" checked>
+          <span class="toggle-slider"></span>
+          Live update
+        </label>
+        <select id="refreshRate">
+          <option value="1">1s</option>
+          <option value="2" selected>2s</option>
+          <option value="3">3s</option>
+          <option value="5">5s</option>
+        </select>
+        <span class="updated-at" id="updatedAt">--:--:-- UTC</span>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="status-bar">
+        <div class="status-item" id="kafkaStatus">
+          <span class="label">Kafka:</span>
+          <span class="value">--</span>
+        </div>
+        <div class="status-item" id="freshnessStatus">
+          <span class="label">Data freshness:</span>
+          <span class="value">--</span>
+        </div>
+        <div class="status-item" id="latencyStatus" title="Age of most recent events (pipeline latency)">
+          <span class="label">Pipeline latency:</span>
+          <span class="value">--</span>
+        </div>
+      </section>
+
+      <section class="kpis">
+        <div class="kpi-card">
+          <div class="kpi-label">Total Trades (3m)</div>
+          <div class="kpi-value" id="totalTrades">0</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Live Symbols</div>
+          <div class="kpi-value" id="liveSymbols">0</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Total Volume (3m)</div>
+          <div class="kpi-value" id="totalVolume">0</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Data Freshness</div>
+          <div class="kpi-value" id="dataFreshness">N/A</div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Rolling 3-Minute Summary</h2>
+        <div class="table-controls">
+          <input type="search" id="symbolSearch" placeholder="Filter by symbol..." class="search-input">
+        </div>
+        <div class="table-wrap">
+          <table class="metrics-table">
+            <thead>
+              <tr>
+                <th class="sortable" data-sort="product_id" data-label="Symbol">Symbol</th>
+                <th class="sortable" data-sort="trade_count" data-label="Trades">Trades</th>
+                <th class="sortable" data-sort="avg_price_usd" data-label="Avg Price (USD)">Avg Price (USD)</th>
+                <th class="sortable" data-sort="vwap_usd" data-label="VWAP (USD)" title="Volume-Weighted Average Price">VWAP (USD)</th>
+                <th class="sortable" data-sort="volatility_usd" data-label="Volatility" title="Standard deviation of price in window">Volatility</th>
+                <th class="sortable" data-sort="total_volume_qty" data-label="Volume">Volume</th>
+              </tr>
+            </thead>
+            <tbody id="metricsBody">
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section alerts-section" id="alertsSection">
+        <h2>Volume Spike Alerts</h2>
+        <div class="alerts" id="alerts"></div>
+      </section>
+
+      <section class="section charts">
+        <div class="chart-container">
+          <h3>Avg Price & Trade Count by Symbol</h3>
+          <canvas id="barChart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>Avg Price Trend (30s buckets)</h3>
+          <div class="chart-symbol-filters" id="lineChartFilters">
+            <span class="filter-label">Show:</span>
+            <div class="symbol-checks" id="symbolChecks"></div>
+            <button type="button" class="filter-btn" id="selectAllSymbols">All</button>
+            <button type="button" class="filter-btn" id="deselectAllSymbols">None</button>
+          </div>
+          <canvas id="lineChart"></canvas>
+        </div>
+      </section>
+
+      <footer class="footer">
+        Window: last <span id="windowMinutes">3</span> minutes. Events tracked: <span id="eventCount">0</span>.
+      </footer>
+    </main>
+  </div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
