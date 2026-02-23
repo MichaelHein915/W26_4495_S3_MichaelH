@@ -168,6 +168,8 @@ To run on a different port:
 DASHBOARD_PORT=8080 python Implementation/dashboard/api_server.py
 ```
 
+Open **http://localhost:8080** (or `http://192.168.1.77:8080` from another device on your network) in your browser.
+
 #### Option B: Streamlit Dashboard
 
 ```bash
