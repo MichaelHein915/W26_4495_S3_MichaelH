@@ -187,6 +187,7 @@ def _compute_timeseries(events: list) -> list[dict]:
         .reset_index()
         .sort_values(["product_id", "event_time"])
     )
+    ts = ts.dropna(subset=["avg_price_usd"])
     ts["event_time"] = ts["event_time"].dt.strftime("%Y-%m-%dT%H:%M:%S")
     return ts.to_dict(orient="records")
 
