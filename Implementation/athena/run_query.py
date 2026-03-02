@@ -47,14 +47,14 @@ EXAMPLE_QUERIES = {
         LIMIT 10
     """,
     "Hourly volume summary": f"""
-        SELECT hour,
+        SELECT year, month, day, hour,
                product_id,
                COUNT(*)                      AS candles,
                ROUND(SUM(volume), 4)         AS total_volume,
                ROUND(AVG(close_price), 2)    AS avg_close
         FROM {DATABASE}.candles_1m
-        GROUP BY hour, product_id
-        ORDER BY hour DESC, total_volume DESC
+        GROUP BY year, month, day, hour, product_id
+        ORDER BY year DESC, month DESC, day DESC, hour DESC, total_volume DESC
         LIMIT 20
     """,
 }

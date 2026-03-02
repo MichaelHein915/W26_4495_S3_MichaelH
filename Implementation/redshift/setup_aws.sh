@@ -22,7 +22,7 @@ AWS_REGION="${AWS_REGION:-us-west-2}"
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
 S3_BUCKET="${S3_BUCKET:-crypto-pipeline-staging-${ACCOUNT_ID}}"
-S3_PREFIX="redshift-staging/"
+S3_PREFIX="${S3_STAGING_PREFIX:-crypto-data/}"
 
 NAMESPACE_NAME="crypto-pipeline"
 WORKGROUP_NAME="crypto-pipeline"
