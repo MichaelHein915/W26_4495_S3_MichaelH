@@ -8,6 +8,7 @@ Usage:
     python setup_athena.py
 """
 
+import os
 import sys
 import time
 from pathlib import Path
@@ -26,7 +27,8 @@ if not config.s3_bucket:
 athena = boto3.client("athena", region_name=config.aws_region)
 
 DATABASE = config.athena_database
-OUTPUT = f"s3://{config.s3_bucket}/athena-results/"
+RESULTS_BUCKET = os.environ.get("ATHENA_RESULTS_BUCKET", config.s3_bucket)
+OUTPUT = f"s3://{RESULTS_BUCKET}/athena-results/"
 PREFIX = config.s3_staging_prefix.rstrip("/")
 
 

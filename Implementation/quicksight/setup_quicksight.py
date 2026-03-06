@@ -17,7 +17,9 @@ Usage:
 """
 
 import json
+import os
 import sys
+import time
 import uuid
 from pathlib import Path
 
@@ -41,7 +43,8 @@ if missing:
 sts = boto3.client("sts", region_name=config.aws_region)
 ACCOUNT_ID = sts.get_caller_identity()["Account"]
 
-qs = boto3.client("quicksight", region_name=config.aws_region)
+QS_IDENTITY_REGION = os.environ.get("QUICKSIGHT_IDENTITY_REGION", "us-east-1")
+qs = boto3.client("quicksight", region_name=QS_IDENTITY_REGION)
 
 DATASOURCE_ID = "crypto-pipeline-athena"
 DATASET_RAW_ID = "crypto-raw-trades"
@@ -49,7 +52,7 @@ DATASET_CANDLES_ID = "crypto-candles-1m"
 ANALYSIS_ID = "crypto-pipeline-analysis"
 
 QS_USER_ARN = (
-    f"arn:aws:quicksight:{config.aws_region}:{ACCOUNT_ID}"
+    f"arn:aws:quicksight:{QS_IDENTITY_REGION}:{ACCOUNT_ID}"
     f":user/default/{config.quicksight_user}"
 )
 
@@ -96,13 +99,21 @@ def _grant_permissions(resource_type: str, resource_id: str):
         "analysis": qs.update_analysis_permissions,
     }[resource_type]
 
-    call(
-        AwsAccountId=ACCOUNT_ID,
-        **{_resource_id_key(resource_type): resource_id},
-        GrantPermissions=[
-            {"Principal": PRINCIPAL_ARN, "Actions": actions_map[resource_type]}
-        ],
-    )
+    for attempt in range(6):
+        try:
+            call(
+                AwsAccountId=ACCOUNT_ID,
+                **{_resource_id_key(resource_type): resource_id},
+                GrantPermissions=[
+                    {"Principal": PRINCIPAL_ARN, "Actions": actions_map[resource_type]}
+                ],
+            )
+            return
+        except ClientError as e:
+            if "CREATION_IN_PROGRESS" in str(e) and attempt < 5:
+                time.sleep(3)
+                continue
+            raise
 
 
 def _resource_id_key(resource_type: str) -> str:
@@ -146,7 +157,7 @@ def _build_dataset(dataset_id: str, name: str, table: str, columns: dict):
         physical_table_id: {
             "RelationalTable": {
                 "DataSourceArn": (
-                    f"arn:aws:quicksight:{config.aws_region}:{ACCOUNT_ID}"
+                    f"arn:aws:quicksight:{QS_IDENTITY_REGION}:{ACCOUNT_ID}"
                     f":datasource/{DATASOURCE_ID}"
                 ),
                 "Catalog": "AwsDataCatalog",
@@ -226,11 +237,11 @@ def create_analysis():
     print("  Creating analysis ...")
 
     raw_ds_arn = (
-        f"arn:aws:quicksight:{config.aws_region}:{ACCOUNT_ID}"
+        f"arn:aws:quicksight:{QS_IDENTITY_REGION}:{ACCOUNT_ID}"
         f":dataset/{DATASET_RAW_ID}"
     )
     candles_ds_arn = (
-        f"arn:aws:quicksight:{config.aws_region}:{ACCOUNT_ID}"
+        f"arn:aws:quicksight:{QS_IDENTITY_REGION}:{ACCOUNT_ID}"
         f":dataset/{DATASET_CANDLES_ID}"
     )
 
@@ -254,7 +265,6 @@ def create_analysis():
                         "KPIVisual": {
                             "VisualId": "kpi-total-trades",
                             "Title": {"Visibility": "VISIBLE", "FormatText": {"PlainText": "Total Trades"}},
-                            "DataSetIdentifier": "raw_trades",
                             "ChartConfiguration": {
                                 "FieldWells": {
                                     "Values": [{"NumericalMeasureField": {"FieldId": "trade-count", "Column": {"DataSetIdentifier": "raw_trades", "ColumnName": "price"}, "AggregationFunction": {"SimpleNumericalAggregation": "COUNT"}}}],
@@ -266,7 +276,6 @@ def create_analysis():
                         "BarChartVisual": {
                             "VisualId": "bar-volume-by-symbol",
                             "Title": {"Visibility": "VISIBLE", "FormatText": {"PlainText": "Volume by Symbol"}},
-                            "DataSetIdentifier": "candles_1m",
                             "ChartConfiguration": {
                                 "FieldWells": {
                                     "BarChartAggregatedFieldWells": {
@@ -281,7 +290,6 @@ def create_analysis():
                         "LineChartVisual": {
                             "VisualId": "line-vwap-trend",
                             "Title": {"Visibility": "VISIBLE", "FormatText": {"PlainText": "VWAP Trend by Symbol"}},
-                            "DataSetIdentifier": "candles_1m",
                             "ChartConfiguration": {
                                 "FieldWells": {
                                     "LineChartAggregatedFieldWells": {
@@ -336,7 +344,7 @@ def trigger_spice_refresh():
 
 def print_urls():
     """Print the QuickSight console URL for the analysis."""
-    base = f"https://{config.aws_region}.quicksight.aws.amazon.com"
+    base = f"https://{QS_IDENTITY_REGION}.quicksight.aws.amazon.com"
     print()
     print("  Open your dashboard in QuickSight:")
     print(f"    {base}/sn/analyses/{ANALYSIS_ID}")
