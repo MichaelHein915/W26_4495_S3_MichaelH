@@ -21,6 +21,10 @@ Coinbase WebSocket API (ticker channel)
         ├──▶ api_server.py          (Flask REST API → HTML/JS dashboard)
         ├──▶ redshift_sink.py       (Kafka → S3 Parquet → Redshift COPY)
         └──▶ s3_sink.py             (Kafka → S3 Parquet → Athena queries)
+                                                              │
+                                                              ▼
+                                                      Amazon QuickSight
+                                                    (BI dashboards via SPICE)
 ```
 
 **Tracked Symbols:** BTC-USD, ETH-USD, SOL-USD, XRP-USD, ADA-USD, DOGE-USD, AVAX-USD, LINK-USD, LTC-USD, BCH-USD
@@ -38,6 +42,7 @@ Coinbase WebSocket API (ticker channel)
 | Dashboard (Option B) | Streamlit | ≥1.32.0 |
 | Data Warehouse | Amazon Redshift Serverless | — |
 | Query Engine | Amazon Athena | — |
+| BI Dashboards | Amazon QuickSight (SPICE) | — |
 | Object Storage | Amazon S3 (Parquet + Hive partitioning) | — |
 | Language | Python | 3.11+ |
 
@@ -215,6 +220,7 @@ Add these to your `.env` when using AWS sinks:
 | `REDSHIFT_PASSWORD` | — | Redshift admin password |
 | `REDSHIFT_IAM_ROLE` | — | IAM role ARN for Redshift S3 access |
 | `ATHENA_DATABASE` | `crypto_pipeline` | Athena database name |
+| `QUICKSIGHT_USER` | — | Your QuickSight username (for dashboard setup) |
 | `SINK_FLUSH_INTERVAL_SEC` | `60` | Seconds between sink flushes |
 | `SINK_FLUSH_MAX_RECORDS` | `5000` | Max buffered records before flush |
 
@@ -239,7 +245,7 @@ python Implementation/redshift/redshift_sink.py
 
 The sink consumes from Kafka, buffers trades, and periodically flushes raw trades and 1-minute OHLCV candles to Redshift via S3 COPY.
 
-### Option B: S3 + Athena
+### Option B: S3 + Athena + QuickSight
 
 Writes Hive-partitioned Parquet files to S3 so Athena can query them directly — no Redshift required:
 
@@ -253,6 +259,34 @@ python Implementation/athena/s3_sink.py
 # 3. Run example queries
 python Implementation/athena/run_query.py
 ```
+
+### QuickSight Dashboards
+
+QuickSight connects to the Athena tables and provides interactive BI dashboards with SPICE (in-memory) acceleration.
+
+**Prerequisites:**
+- QuickSight enabled in your AWS account ([sign up here](https://quicksight.aws.amazon.com/))
+- During QuickSight setup, grant access to your S3 bucket and Athena
+- Athena tables already created (`setup_athena.py`) and S3 sink running
+
+```bash
+# 1. Set your QuickSight username in .env
+#    QUICKSIGHT_USER=YourIAMUsername
+
+# 2. Run the setup script (creates data source, datasets, and analysis)
+python Implementation/quicksight/setup_quicksight.py
+
+# 3. Open the analysis URL printed by the script, then customize visuals
+#    and publish as a shared dashboard from the QuickSight console
+```
+
+The setup script creates:
+- **Athena data source** — connects QuickSight to your Athena workgroup
+- **Crypto Raw Trades dataset** — SPICE-backed dataset over `raw_trades`
+- **Crypto Candles 1m dataset** — SPICE-backed dataset over `candles_1m`
+- **Crypto Pipeline Dashboard analysis** — starter visuals (trade KPI, volume by symbol, VWAP trend)
+
+To refresh data, re-run the setup script or configure a SPICE refresh schedule in the QuickSight console (Datasets → Schedule refresh).
 
 ## Stopping the Pipeline
 
@@ -293,10 +327,12 @@ cryto-streaming-pipeline/
 │   │   ├── apply_schema.py         # Apply schema via redshift-connector
 │   │   ├── test_connection.py      # Verify Redshift connectivity
 │   │   └── setup_aws.sh            # AWS provisioning script
-│   └── athena/
-│       ├── s3_sink.py              # Kafka → S3 Parquet (Hive partitioning)
-│       ├── setup_athena.py         # Create Athena DB + external tables
-│       └── run_query.py            # Example Athena queries
+│   ├── athena/
+│   │   ├── s3_sink.py              # Kafka → S3 Parquet (Hive partitioning)
+│   │   ├── setup_athena.py         # Create Athena DB + external tables
+│   │   └── run_query.py            # Example Athena queries
+│   └── quicksight/
+│       └── setup_quicksight.py     # QuickSight data source, datasets & analysis
 ├── data/
 │   ├── checkpoints/                # Spark streaming checkpoints
 │   └── output/                     # Data output directory
@@ -317,3 +353,5 @@ cryto-streaming-pipeline/
 | Port 5000 already in use | Use a different port: `DASHBOARD_PORT=8080 python Implementation/dashboard/api_server.py` |
 | Redshift COPY fails | Check that `REDSHIFT_IAM_ROLE` has S3 read access and the bucket/prefix are correct |
 | Athena query returns no results | Ensure the S3 sink is running and files exist under `s3://<bucket>/<prefix>/` |
+| QuickSight `AccessDeniedException` | Ensure QuickSight has permission to access your S3 bucket and Athena (QuickSight console → Manage QuickSight → Security & permissions) |
+| QuickSight datasets show 0 rows | Trigger a SPICE refresh: re-run `setup_quicksight.py` or refresh manually in the Datasets page |

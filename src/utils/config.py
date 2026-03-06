@@ -31,6 +31,9 @@ class AppConfig:
     # Athena
     athena_database: str = "crypto_pipeline"
 
+    # QuickSight
+    quicksight_user: str = ""
+
     # Sink tuning
     sink_flush_interval_sec: int = 60
     sink_flush_max_records: int = 5000
@@ -64,6 +67,7 @@ def get_config() -> AppConfig:
         s3_staging_prefix=os.getenv("S3_STAGING_PREFIX", "crypto-data/"),
         aws_region=os.getenv("AWS_REGION", "us-west-2"),
         athena_database=os.getenv("ATHENA_DATABASE", "crypto_pipeline"),
+        quicksight_user=os.getenv("QUICKSIGHT_USER", ""),
         sink_flush_interval_sec=int(os.getenv("SINK_FLUSH_INTERVAL_SEC", "60")),
         sink_flush_max_records=int(os.getenv("SINK_FLUSH_MAX_RECORDS", "5000")),
     )
