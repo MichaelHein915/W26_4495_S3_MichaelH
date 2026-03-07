@@ -107,7 +107,7 @@ def _compute_timeseries(events: deque) -> pd.DataFrame:
     timeseries = (
         df.set_index("event_time")
         .groupby("product_id")
-        .resample("30s")
+        .resample("30s", include_groups=False)
         .mean(numeric_only=True)
         .reset_index()
         .sort_values(["product_id", "event_time"])

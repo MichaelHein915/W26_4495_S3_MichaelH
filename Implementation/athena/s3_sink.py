@@ -78,7 +78,7 @@ def _compute_candles(df: pd.DataFrame) -> pd.DataFrame:
 
     candles = (
         df.groupby("product_id")
-        .resample("1min")
+        .resample("1min", include_groups=False)
         .agg(
             open_price=("price", "first"),
             high_price=("price", "max"),
