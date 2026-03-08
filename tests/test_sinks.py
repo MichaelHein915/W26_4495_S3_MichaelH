@@ -1,13 +1,18 @@
-"""Tests for the _parse_message and _compute_candles logic shared by
-redshift_sink.py and s3_sink.py."""
+"""Tests for parse_trade_message and _compute_candles logic shared by
+redshift_sink.py, s3_sink.py, and utils.parse_trade."""
 
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
 
 from conftest import make_ticker_event
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
+from utils.parse_trade import parse_trade_message
 
 
 @pytest.fixture(scope="module")
@@ -65,55 +70,76 @@ def redshift_sink():
     return mod
 
 
-class TestParseMessageS3Sink:
-    def test_valid_ticker(self, s3_sink):
+class TestParseTradeMessage:
+    """Tests for shared parse_trade_message (raw Coinbase + normalised multi-exchange)."""
+
+    def test_valid_ticker_raw_coinbase(self):
         msg = make_ticker_event(price="65000.50", last_size="0.001")
-        result = s3_sink._parse_message(msg)
+        result = parse_trade_message(msg)
         assert result is not None
         assert result["product_id"] == "BTC-USD"
         assert result["price"] == 65000.50
         assert result["size_qty"] == 0.001
         assert result["notional_usd"] == pytest.approx(65000.50 * 0.001)
+        assert result["exchange"] == "coinbase"
 
-    def test_non_ticker_ignored(self, s3_sink):
-        assert s3_sink._parse_message({"type": "subscriptions"}) is None
+    def test_valid_normalised_binance(self):
+        msg = {
+            "exchange": "binance",
+            "product_id": "BTC-USDT",
+            "price": "65000.50",
+            "size": "0.001",
+            "time": "2026-03-06T12:00:00.000Z",
+        }
+        result = parse_trade_message(msg)
+        assert result is not None
+        assert result["product_id"] == "BTC-USDT"
+        assert result["price"] == 65000.50
+        assert result["size_qty"] == 0.001
+        assert result["exchange"] == "binance"
 
-    def test_missing_price_ignored(self, s3_sink):
+    def test_valid_normalised_kraken(self):
+        msg = {
+            "exchange": "kraken",
+            "product_id": "BTC-USD",
+            "price": "64990",
+            "size": "0.05",
+            "time": "2026-03-06T12:00:00Z",
+        }
+        result = parse_trade_message(msg)
+        assert result is not None
+        assert result["exchange"] == "kraken"
+
+    def test_non_ticker_ignored(self):
+        assert parse_trade_message({"type": "subscriptions"}) is None
+
+    def test_missing_price_ignored(self):
         msg = {"type": "ticker", "product_id": "BTC-USD"}
-        assert s3_sink._parse_message(msg) is None
+        assert parse_trade_message(msg) is None
 
-    def test_invalid_price_ignored(self, s3_sink):
+    def test_invalid_price_ignored(self):
         msg = make_ticker_event(price="not_a_number")
-        assert s3_sink._parse_message(msg) is None
+        assert parse_trade_message(msg) is None
 
-    def test_missing_size_defaults_to_zero(self, s3_sink):
+    def test_missing_size_defaults_to_zero(self):
         msg = make_ticker_event()
         del msg["last_size"]
-        result = s3_sink._parse_message(msg)
+        result = parse_trade_message(msg)
         assert result is not None
         assert result["size_qty"] == 0.0
 
-    def test_product_id_defaults_to_unknown(self, s3_sink):
+    def test_product_id_defaults_to_unknown(self):
         msg = make_ticker_event()
         del msg["product_id"]
-        result = s3_sink._parse_message(msg)
+        result = parse_trade_message(msg)
         assert result["product_id"] == "UNKNOWN"
 
-
-class TestParseMessageRedshiftSink:
-    def test_valid_ticker(self, redshift_sink):
-        msg = make_ticker_event(price="42000.00", last_size="0.5")
-        result = redshift_sink._parse_message(msg)
-        assert result is not None
-        assert result["price"] == 42000.0
-        assert result["size_qty"] == 0.5
-
-    def test_non_ticker_ignored(self, redshift_sink):
-        assert redshift_sink._parse_message({"type": "heartbeat"}) is None
+    def test_heartbeat_ignored(self):
+        assert parse_trade_message({"type": "heartbeat"}) is None
 
 
 class TestComputeCandles:
-    def _make_raw_df(self, count=60):
+    def _make_raw_df(self, count=60, exchange="coinbase"):
         rows = []
         for i in range(count):
             rows.append(
@@ -123,6 +149,7 @@ class TestComputeCandles:
                     "price": 65000.0 + i,
                     "size_qty": 0.001,
                     "notional_usd": (65000.0 + i) * 0.001,
+                    "exchange": exchange,
                 }
             )
         return pd.DataFrame(rows)
@@ -151,6 +178,7 @@ class TestComputeCandles:
                 "price": 100.0,
                 "size_qty": 1.0,
                 "notional_usd": 100.0,
+                "exchange": "coinbase",
             },
             {
                 "trade_time": "2026-03-06T12:00:30.000Z",
@@ -158,6 +186,7 @@ class TestComputeCandles:
                 "price": 120.0,
                 "size_qty": 2.0,
                 "notional_usd": 240.0,
+                "exchange": "coinbase",
             },
             {
                 "trade_time": "2026-03-06T12:00:45.000Z",
@@ -165,6 +194,7 @@ class TestComputeCandles:
                 "price": 90.0,
                 "size_qty": 1.0,
                 "notional_usd": 90.0,
+                "exchange": "coinbase",
             },
         ]
         df = pd.DataFrame(rows)
@@ -188,6 +218,7 @@ class TestComputeCandles:
                 "price": 65000.0,
                 "size_qty": 0.1,
                 "notional_usd": 6500.0,
+                "exchange": "coinbase",
             },
             {
                 "trade_time": "2026-03-06T12:00:00.000Z",
@@ -195,9 +226,23 @@ class TestComputeCandles:
                 "price": 3500.0,
                 "size_qty": 1.0,
                 "notional_usd": 3500.0,
+                "exchange": "coinbase",
             },
         ]
         df = pd.DataFrame(rows)
         candles = s3_sink._compute_candles(df)
         products = set(candles["product_id"])
         assert products == {"BTC-USD", "ETH-USD"}
+        assert "exchange" in candles.columns
+
+    def test_candles_per_exchange(self, s3_sink):
+        """Candles are computed per (product_id, exchange)."""
+        rows = [
+            {"trade_time": "2026-03-06T12:00:00.000Z", "product_id": "BTC-USD", "price": 65000.0, "size_qty": 0.1, "notional_usd": 6500.0, "exchange": "coinbase"},
+            {"trade_time": "2026-03-06T12:00:00.000Z", "product_id": "BTC-USD", "price": 65010.0, "size_qty": 0.2, "notional_usd": 13002.0, "exchange": "binance"},
+        ]
+        df = pd.DataFrame(rows)
+        candles = s3_sink._compute_candles(df)
+        assert len(candles) == 2
+        exchanges = set(candles["exchange"])
+        assert exchanges == {"coinbase", "binance"}

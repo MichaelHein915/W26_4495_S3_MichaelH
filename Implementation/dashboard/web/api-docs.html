@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API Documentation — Crypto Pipeline</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <style>
+    .api-docs { max-width: 800px; margin: 0 auto; padding: 2rem; }
+    .api-docs h1 { margin-bottom: 0.5rem; }
+    .api-docs .subtitle { color: var(--text-muted); margin-bottom: 2rem; }
+    .endpoint { margin: 2rem 0; padding: 1rem; background: var(--bg-card); border-radius: 8px; border: 1px solid var(--border); }
+    .endpoint h2 { margin: 0 0 0.5rem; font-size: 1.1rem; }
+    .method { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 600; font-size: 0.8rem; margin-right: 0.5rem; }
+    .method.get { background: rgba(63, 185, 80, 0.2); color: var(--accent-green); }
+    .path { font-family: var(--font-mono); font-size: 0.95rem; color: var(--accent-blue); }
+    .params { margin-top: 0.75rem; font-size: 0.9rem; }
+    .params table { width: 100%; border-collapse: collapse; }
+    .params th, .params td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border); }
+    .params code { background: var(--bg-secondary); padding: 0.1rem 0.3rem; border-radius: 4px; font-size: 0.85em; }
+    .back-link { display: inline-block; margin-bottom: 1rem; color: var(--accent-blue); text-decoration: none; }
+    .back-link:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="api-docs">
+    <a href="/" class="back-link">← Back to Dashboard</a>
+    <h1>REST API Documentation</h1>
+    <p class="subtitle">Crypto Streaming Pipeline — Real-time trade metrics and analytics</p>
+
+    <div class="endpoint">
+      <h2><span class="method get">GET</span><span class="path">/api/dashboard</span></h2>
+      <p>Returns all dashboard data in a single response: metrics, timeseries, sparklines, alerts, arbitrage opportunities, and exchange stats.</p>
+      <div class="params">
+        <strong>Query parameters:</strong>
+        <table>
+          <tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr>
+          <tr><td><code>window</code></td><td>int</td><td>3</td><td>Time window in minutes (1–30)</td></tr>
+          <tr><td><code>exchange</code></td><td>string</td><td>—</td><td>Filter by exchange: <code>coinbase</code>, <code>binance</code>, <code>kraken</code></td></tr>
+        </table>
+        <p style="margin-top: 0.75rem;"><strong>Example:</strong> <code>GET /api/dashboard?window=5&exchange=binance</code></p>
+      </div>
+    </div>
+
+    <div class="endpoint">
+      <h2><span class="method get">GET</span><span class="path">/api/candles</span></h2>
+      <p>Returns OHLCV candles (1-minute buckets) for the specified symbol.</p>
+      <div class="params">
+        <strong>Query parameters:</strong>
+        <table>
+          <tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr>
+          <tr><td><code>symbol</code></td><td>string</td><td>—</td><td>Filter by symbol (e.g. <code>BTC-USD</code>). Omit for all symbols.</td></tr>
+          <tr><td><code>window</code></td><td>int</td><td>3</td><td>Time window in minutes (1–30)</td></tr>
+          <tr><td><code>exchange</code></td><td>string</td><td>—</td><td>Filter by exchange</td></tr>
+        </table>
+        <p style="margin-top: 0.75rem;"><strong>Example:</strong> <code>GET /api/candles?symbol=BTC-USD&window=10</code></p>
+      </div>
+    </div>
+
+    <div class="endpoint">
+      <h2><span class="method get">GET</span><span class="path">/health</span></h2>
+      <p>Health check endpoint. Returns Kafka connectivity status and data freshness. Use for load balancers and monitoring.</p>
+      <p><strong>Response codes:</strong> <code>200</code> = healthy, <code>503</code> = degraded (Kafka error or stale data)</p>
+    </div>
+
+    <div class="endpoint">
+      <h2>Response schemas</h2>
+      <p><strong>/api/dashboard</strong> returns:</p>
+      <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
+        <li><code>metrics</code> — Per-symbol aggregations (trade_count, avg_price_usd, vwap_usd, volatility_usd, total_volume_qty, price_change_pct)</li>
+        <li><code>timeseries</code> — 30-second price buckets per symbol</li>
+        <li><code>sparklines</code> — Last ~20 price samples per symbol for inline charts</li>
+        <li><code>alerts</code> — Volume spike alerts</li>
+        <li><code>arbitrage</code> — Cross-exchange price spread opportunities</li>
+        <li><code>exchange_stats</code> — Per-exchange trade counts and symbols</li>
+        <li><code>status</code> — Kafka status, freshness, latency, totals</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>

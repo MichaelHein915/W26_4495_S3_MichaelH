@@ -11,12 +11,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory
 from kafka import KafkaConsumer
 
 repo_root = Path(__file__).resolve().parents[2]
 sys.path.append(str(repo_root / "src"))
 from utils.config import get_config
+from utils.alerts import alert_arbitrage, alert_volume_spike
 
 app = Flask(__name__, static_folder="web", static_url_path="/")
 
@@ -33,6 +34,7 @@ _state = {
 _state_lock = threading.Lock()
 
 WINDOW_MINUTES = 3
+MAX_RETENTION_MINUTES = 10
 
 
 def _parse_event_time(raw_time: str) -> datetime | None:
@@ -109,6 +111,8 @@ def _poll_and_ingest():
                     except (TypeError, ValueError):
                         size_qty = 0.0
 
+                    exchange = msg.get("exchange", "coinbase")
+
                     _state["events"].append(
                         {
                             "event_time": event_time,
@@ -116,6 +120,7 @@ def _poll_and_ingest():
                             "size_qty": size_qty,
                             "notional_usd": price_value * size_qty,
                             "product_id": product_id,
+                            "exchange": exchange,
                         }
                     )
                     if (
@@ -124,7 +129,7 @@ def _poll_and_ingest():
                     ):
                         _state["last_event_time"] = event_time
 
-                cutoff = datetime.now(timezone.utc) - timedelta(minutes=WINDOW_MINUTES)
+                cutoff = datetime.now(timezone.utc) - timedelta(minutes=MAX_RETENTION_MINUTES)
                 while _state["events"] and _state["events"][0]["event_time"] < cutoff:
                     _state["events"].popleft()
 
@@ -156,6 +161,8 @@ def _compute_metrics(events: list) -> list[dict]:
             total_volume_qty=("size_qty", "sum"),
             total_notional_usd=("notional_usd", "sum"),
             volatility_usd=("price_usd", "std"),
+            first_price=("price_usd", "first"),
+            last_price=("price_usd", "last"),
         )
         .sort_values("product_id")
     )
@@ -166,11 +173,141 @@ def _compute_metrics(events: list) -> list[dict]:
         / metrics.loc[has_volume, "total_volume_qty"]
     )
     metrics["volatility_usd"] = metrics["volatility_usd"].fillna(0.0)
+    metrics["price_change_pct"] = (
+        ((metrics["last_price"] - metrics["first_price"]) / metrics["first_price"]) * 100
+    ).round(2).fillna(0.0)
     for col in ["avg_price_usd", "vwap_usd", "volatility_usd", "total_volume_qty"]:
         metrics[col] = metrics[col].round(4 if col == "total_volume_qty" else 2)
     return metrics[
-        ["product_id", "trade_count", "avg_price_usd", "vwap_usd", "volatility_usd", "total_volume_qty"]
+        ["product_id", "trade_count", "avg_price_usd", "vwap_usd",
+         "volatility_usd", "total_volume_qty", "price_change_pct"]
     ].to_dict(orient="records")
+
+
+def _normalize_symbol_base(product_id: str) -> str:
+    """Extract base asset for cross-exchange comparison. BTC-USD, BTC-USDT -> BTC."""
+    if "-" in product_id:
+        return product_id.split("-", 1)[0].upper()
+    return product_id.upper()
+
+
+def _compute_arbitrage_opportunities(
+    events: list, threshold_pct: float = 0.3
+) -> list[dict]:
+    """
+    Detect cross-exchange price differences. Returns opportunities where
+    spread between cheapest and most expensive exchange exceeds threshold.
+    """
+    if not events or len(events) < 2:
+        return []
+    df = pd.DataFrame(events)
+    if "exchange" not in df.columns:
+        df["exchange"] = "coinbase"
+    df["exchange"] = df["exchange"].fillna("coinbase")
+    df["base"] = df["product_id"].apply(_normalize_symbol_base)
+    df["event_time"] = pd.to_datetime(df["event_time"], utc=True)
+
+    # Avg price per (base, exchange) in the window
+    by_base_exchange = (
+        df.groupby(["base", "exchange"], as_index=False)
+        .agg(avg_price=("price_usd", "mean"), last_price=("price_usd", "last"))
+        .groupby("base")
+    )
+
+    opportunities = []
+    for base, grp in by_base_exchange:
+        if len(grp) < 2:
+            continue
+        prices = grp.set_index("exchange")["avg_price"]
+        min_price = prices.min()
+        max_price = prices.max()
+        if min_price <= 0:
+            continue
+        spread_pct = ((max_price - min_price) / min_price) * 100
+        if spread_pct < threshold_pct:
+            continue
+        cheap_ex = prices.idxmin()
+        expensive_ex = prices.idxmax()
+        opportunities.append(
+            {
+                "product_id": f"{base}-USD",
+                "base": base,
+                "cheap_exchange": cheap_ex,
+                "expensive_exchange": expensive_ex,
+                "cheap_price": round(float(min_price), 2),
+                "expensive_price": round(float(max_price), 2),
+                "spread_pct": round(spread_pct, 2),
+            }
+        )
+    return sorted(opportunities, key=lambda x: -x["spread_pct"])
+
+
+def _compute_exchange_stats(events: list) -> dict:
+    """Per-exchange trade count and list of unique exchanges seen."""
+    if not events:
+        return {"exchanges": [], "exchange_counts": {}, "exchange_symbols": {}}
+    df = pd.DataFrame(events)
+    if "exchange" not in df.columns:
+        df["exchange"] = "coinbase"
+    df["exchange"] = df["exchange"].fillna("coinbase")
+    by_exchange = df.groupby("exchange", as_index=False).agg(
+        trade_count=("price_usd", "count"),
+    )
+    exchange_counts = dict(zip(by_exchange["exchange"], by_exchange["trade_count"]))
+    exchange_symbols = {}
+    for exch, grp in df.groupby("exchange"):
+        exchange_symbols[exch] = sorted(grp["product_id"].unique().tolist())
+    return {
+        "exchanges": sorted(df["exchange"].unique().tolist()),
+        "exchange_counts": exchange_counts,
+        "exchange_symbols": exchange_symbols,
+    }
+
+
+def _compute_sparklines(events: list) -> dict[str, list[float]]:
+    """Return last ~20 price samples per symbol for inline sparklines."""
+    if not events:
+        return {}
+    df = pd.DataFrame(events)
+    df["event_time"] = pd.to_datetime(df["event_time"], utc=True)
+    sparklines = {}
+    for pid, grp in df.groupby("product_id"):
+        prices = grp.sort_values("event_time")["price_usd"].tolist()
+        step = max(1, len(prices) // 20)
+        sparklines[pid] = [round(p, 2) for p in prices[::step][-20:]]
+    return sparklines
+
+
+def _compute_candles(events: list, symbol: str | None = None) -> list[dict]:
+    """Compute 1-minute OHLCV candles, optionally filtered to a single symbol."""
+    if not events:
+        return []
+    df = pd.DataFrame(events)
+    if symbol:
+        df = df[df["product_id"] == symbol]
+    if df.empty:
+        return []
+    df["event_time"] = pd.to_datetime(df["event_time"], utc=True)
+    df = df.set_index("event_time")
+
+    candles = (
+        df.groupby("product_id")
+        .resample("1min", include_groups=False)
+        .agg(
+            open=("price_usd", "first"),
+            high=("price_usd", "max"),
+            low=("price_usd", "min"),
+            close=("price_usd", "last"),
+            volume=("size_qty", "sum"),
+        )
+        .reset_index()
+    )
+    candles = candles.dropna(subset=["open"])
+    candles["event_time"] = candles["event_time"].dt.strftime("%Y-%m-%dT%H:%M:%S")
+    for col in ["open", "high", "low", "close"]:
+        candles[col] = candles[col].round(2)
+    candles["volume"] = candles["volume"].round(6)
+    return candles.to_dict(orient="records")
 
 
 def _compute_timeseries(events: list) -> list[dict]:
@@ -199,7 +336,66 @@ def index():
     return send_from_directory(app.static_folder, "index.html")
 
 
-def _compute_volume_spikes(metrics: list[dict], volume_history: dict) -> tuple[list[dict], dict]:
+@app.route("/api/docs")
+def api_docs():
+    """REST API documentation."""
+    return send_from_directory(app.static_folder, "api-docs.html")
+
+
+@app.route("/health")
+def health():
+    """Health check: Kafka connectivity and data freshness."""
+    events, meta = _get_events()
+    kafka_error = meta.get("kafka_error")
+    last_event_time = meta.get("last_event_time")
+    event_count = len(events)
+
+    now = datetime.now(timezone.utc)
+    freshness_seconds = None
+    if last_event_time:
+        freshness_seconds = (now - last_event_time).total_seconds()
+
+    # Healthy if Kafka connected (no error) and either: no data yet (waiting), or data is fresh (<5min)
+    stale_threshold_sec = 300
+    is_healthy = kafka_error is None and (
+        (event_count == 0 and freshness_seconds is None)
+        or (event_count > 0 and freshness_seconds is not None and freshness_seconds < stale_threshold_sec)
+    )
+    status_code = 200 if is_healthy else 503
+
+    return (
+        jsonify(
+            {
+                "status": "ok" if is_healthy else "degraded",
+                "kafka_connected": kafka_error is None,
+                "kafka_error": kafka_error,
+                "event_count": event_count,
+                "freshness_seconds": round(freshness_seconds, 1) if freshness_seconds is not None else None,
+                "last_event_time": last_event_time.isoformat() if last_event_time else None,
+            }
+        ),
+        status_code,
+    )
+
+
+@app.route("/api/candles")
+def candles_endpoint():
+    """OHLCV candles for a specific symbol."""
+    symbol = request.args.get("symbol", "")
+    window = int(request.args.get("window", WINDOW_MINUTES))
+    window = max(1, min(window, 30))
+    exchange_filter = request.args.get("exchange", "").strip().lower()
+    events, _ = _get_events()
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=window)
+    events = [e for e in events if e["event_time"] >= cutoff]
+    if exchange_filter:
+        events = [e for e in events if e.get("exchange", "coinbase").lower() == exchange_filter]
+    return jsonify({"candles": _compute_candles(events, symbol or None)})
+
+
+def _compute_volume_spikes(
+    metrics: list[dict], volume_history: dict, threshold: float = 2.0
+) -> tuple[list[dict], dict]:
     """Returns (alerts, updated volume_history). Caller should store volume_history back in state."""
     alerts = []
     for row in metrics:
@@ -208,7 +404,7 @@ def _compute_volume_spikes(metrics: list[dict], volume_history: dict) -> tuple[l
         history = volume_history.setdefault(symbol, deque(maxlen=30))
         if len(history) >= 5:
             baseline = sum(history) / len(history)
-            if baseline > 0 and current >= 2.0 * baseline:
+            if baseline > 0 and current >= threshold * baseline:
                 alerts.append(
                     {
                         "product_id": symbol,
@@ -224,13 +420,63 @@ def _compute_volume_spikes(metrics: list[dict], volume_history: dict) -> tuple[l
 @app.route("/api/dashboard")
 def dashboard():
     """Single endpoint returning all dashboard data."""
+    window_minutes = int(request.args.get("window", WINDOW_MINUTES))
+    window_minutes = max(1, min(window_minutes, 30))
+    exchange_filter = request.args.get("exchange", "").strip().lower()
+
     events, meta = _get_events()
+
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
+    events = [e for e in events if e["event_time"] >= cutoff]
+
+    if exchange_filter:
+        events = [e for e in events if e.get("exchange", "coinbase").lower() == exchange_filter]
+
+    config = get_config()
+    arbitrage = _compute_arbitrage_opportunities(
+        events, threshold_pct=config.alert_arbitrage_threshold_pct
+    )
+    for opp in arbitrage:
+        alert_arbitrage(
+            config.slack_webhook_url,
+            opp["product_id"],
+            opp["cheap_exchange"],
+            opp["expensive_exchange"],
+            opp["cheap_price"],
+            opp["expensive_price"],
+            opp["spread_pct"],
+            email_to=config.alert_email_to,
+            smtp_host=config.smtp_host,
+            smtp_port=config.smtp_port,
+            smtp_user=config.smtp_user,
+            smtp_password=config.smtp_password,
+            smtp_use_tls=config.smtp_use_tls,
+        )
+
     metrics = _compute_metrics(events)
     timeseries = _compute_timeseries(events)
+    sparklines = _compute_sparklines(events)
+    exchange_stats = _compute_exchange_stats(events)
     volume_history = {
         k: deque(v, maxlen=30) for k, v in meta.get("volume_history", {}).items()
     }
-    alerts, volume_history = _compute_volume_spikes(metrics, volume_history)
+    alerts, volume_history = _compute_volume_spikes(
+        metrics, volume_history, threshold=config.alert_volume_spike_ratio
+    )
+    for a in alerts:
+        alert_volume_spike(
+            config.slack_webhook_url,
+            a["product_id"],
+            a["current_volume"],
+            a["baseline_volume"],
+            a["spike_ratio"],
+            email_to=config.alert_email_to,
+            smtp_host=config.smtp_host,
+            smtp_port=config.smtp_port,
+            smtp_user=config.smtp_user,
+            smtp_password=config.smtp_password,
+            smtp_use_tls=config.smtp_use_tls,
+        )
     with _state_lock:
         _state["volume_history"] = {k: list(v) for k, v in volume_history.items()}
 
@@ -268,7 +514,10 @@ def dashboard():
         {
             "metrics": metrics,
             "timeseries": timeseries,
+            "sparklines": sparklines,
             "alerts": alerts,
+            "arbitrage": arbitrage,
+            "exchange_stats": exchange_stats,
             "status": {
                 "kafka_status": kafka_status,
                 "kafka_error": kafka_error,
@@ -278,7 +527,7 @@ def dashboard():
                 "total_volume": total_volume,
                 "live_symbols": live_symbols,
                 "event_count": event_count,
-                "window_minutes": WINDOW_MINUTES,
+                "window_minutes": window_minutes,
                 "updated_at": now.strftime("%H:%M:%S UTC"),
             },
         }

@@ -167,3 +167,80 @@ class TestDashboardEndpoint:
         data = resp.get_json()
         assert "error" in data["status"]["kafka_status"]
         assert data["status"]["kafka_error"] == "Connection refused"
+
+
+class TestArbitrageDetection:
+    def test_empty_events(self, api):
+        result = api._compute_arbitrage_opportunities([])
+        assert result == []
+
+    def test_single_exchange_no_opportunity(self, api):
+        events = [
+            make_parsed_event(product_id="BTC-USD", price_usd=65000),
+            make_parsed_event(product_id="BTC-USD", price_usd=65010),
+        ]
+        for e in events:
+            e["exchange"] = "coinbase"
+        result = api._compute_arbitrage_opportunities(events, threshold_pct=0.3)
+        assert result == []
+
+    def test_cross_exchange_opportunity(self, api):
+        events = [
+            make_parsed_event(product_id="BTC-USD", price_usd=65000),
+            make_parsed_event(product_id="BTC-USDT", price_usd=65200),
+        ]
+        events[0]["exchange"] = "coinbase"
+        events[1]["exchange"] = "binance"
+        result = api._compute_arbitrage_opportunities(events, threshold_pct=0.2)
+        assert len(result) == 1
+        assert result[0]["cheap_exchange"] == "coinbase"
+        assert result[0]["expensive_exchange"] == "binance"
+        assert result[0]["spread_pct"] > 0.2
+
+
+class TestHealthEndpoint:
+    @pytest.fixture()
+    def client(self, api):
+        api.app.config["TESTING"] = True
+        with api.app.test_client() as c:
+            yield c
+
+    def test_health_ok_when_connected_and_fresh_data(self, api, client):
+        now = datetime.now(timezone.utc)
+        events = [make_parsed_event(time_str=now.isoformat().replace("+00:00", "Z"))]
+        with api._state_lock:
+            api._state["events"] = deque(events)
+            api._state["last_event_time"] = events[0]["event_time"]
+            api._state["kafka_error"] = None
+
+        resp = client.get("/health")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "ok"
+        assert data["kafka_connected"] is True
+        assert data["event_count"] == 1
+
+    def test_health_degraded_when_kafka_error(self, api, client):
+        with api._state_lock:
+            api._state["events"] = deque()
+            api._state["last_event_time"] = None
+            api._state["kafka_error"] = "Connection refused"
+
+        resp = client.get("/health")
+        assert resp.status_code == 503
+        data = resp.get_json()
+        assert data["status"] == "degraded"
+        assert data["kafka_connected"] is False
+        assert data["kafka_error"] == "Connection refused"
+
+    def test_health_ok_when_waiting_for_data(self, api, client):
+        with api._state_lock:
+            api._state["events"] = deque()
+            api._state["last_event_time"] = None
+            api._state["kafka_error"] = None
+
+        resp = client.get("/health")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "ok"
+        assert data["kafka_connected"] is True

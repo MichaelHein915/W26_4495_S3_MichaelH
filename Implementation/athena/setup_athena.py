@@ -80,6 +80,7 @@ def main():
             price         DOUBLE,
             size_qty      DOUBLE,
             notional_usd  DOUBLE,
+            exchange      STRING,
             batch_id      STRING
         )
         PARTITIONED BY (
@@ -118,6 +119,7 @@ def main():
             window_start   STRING,
             window_end     STRING,
             product_id     STRING,
+            exchange       STRING,
             open_price     DOUBLE,
             high_price     DOUBLE,
             low_price      DOUBLE,

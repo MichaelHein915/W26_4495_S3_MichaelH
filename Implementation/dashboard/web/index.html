@@ -3,26 +3,41 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Crypto 3-Minute Metrics (Live)</title>
+  <title>Crypto Live Metrics</title>
   <link rel="stylesheet" href="/css/styles.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+  <script>
+    (function(){const t=localStorage.getItem('theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');})();
+  </script>
 </head>
 <body>
   <div class="app">
     <header class="header">
-      <h1>Crypto 3-Minute Metrics</h1>
+      <h1>Crypto Live Metrics</h1>
       <div class="header-controls">
         <label class="toggle">
           <input type="checkbox" id="liveToggle" checked>
           <span class="toggle-slider"></span>
-          Live update
+          <span class="live-label"><span class="pulse-dot"></span> Live</span>
         </label>
-        <select id="refreshRate">
+        <select id="refreshRate" title="Refresh interval">
           <option value="1">1s</option>
           <option value="2" selected>2s</option>
           <option value="3">3s</option>
           <option value="5">5s</option>
         </select>
+        <div class="window-selector" title="Time window">
+          <button class="window-btn active" data-window="1">1m</button>
+          <button class="window-btn" data-window="3">3m</button>
+          <button class="window-btn" data-window="5">5m</button>
+          <button class="window-btn" data-window="10">10m</button>
+        </div>
+        <button class="icon-btn" id="themeToggle" title="Toggle light/dark theme">
+          <span id="themeIcon">☀</span>
+        </button>
+        <button class="icon-btn" id="notifToggle" title="Toggle sound & desktop notifications">
+          <span id="notifIcon">🔔</span>
+        </button>
         <span class="updated-at" id="updatedAt">--:--:-- UTC</span>
       </div>
     </header>
@@ -43,35 +58,64 @@
         </div>
       </section>
 
+      <section class="exchange-bar" id="exchangeBar">
+        <span class="exchange-bar-label">Exchanges:</span>
+        <div class="exchange-pills" id="exchangePills"></div>
+        <select id="exchangeFilter" title="Filter metrics by exchange" class="exchange-filter-select">
+          <option value="">All exchanges</option>
+          <option value="coinbase">Coinbase only</option>
+          <option value="binance">Binance only</option>
+          <option value="kraken">Kraken only</option>
+        </select>
+      </section>
+
       <section class="kpis">
-        <div class="kpi-card">
-          <div class="kpi-label">Total Trades (3m)</div>
+        <div class="kpi-card" id="kpiTrades">
+          <div class="kpi-label">Total Trades (<span class="kpi-window">1</span>m)</div>
           <div class="kpi-value" id="totalTrades">0</div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card" id="kpiSymbols">
           <div class="kpi-label">Live Symbols</div>
           <div class="kpi-value" id="liveSymbols">0</div>
         </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Total Volume (3m)</div>
+        <div class="kpi-card" id="kpiVolume">
+          <div class="kpi-label">Total Volume (<span class="kpi-window">1</span>m)</div>
           <div class="kpi-value" id="totalVolume">0</div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card" id="kpiExchanges">
+          <div class="kpi-label">Live Exchanges</div>
+          <div class="kpi-value" id="liveExchanges">0</div>
+        </div>
+        <div class="kpi-card" id="kpiFreshness">
           <div class="kpi-label">Data Freshness</div>
           <div class="kpi-value" id="dataFreshness">N/A</div>
         </div>
       </section>
 
+      <section class="top-movers" id="topMoversSection" style="display:none">
+        <div class="mover mover-up" id="topGainer">
+          <span class="mover-icon">▲</span>
+          <span class="mover-text"></span>
+        </div>
+        <div class="mover mover-down" id="topLoser">
+          <span class="mover-icon">▼</span>
+          <span class="mover-text"></span>
+        </div>
+      </section>
+
       <section class="section">
-        <h2>Rolling 3-Minute Summary</h2>
+        <h2>Rolling <span id="tableSummaryWindow">1</span>-Minute Summary</h2>
         <div class="table-controls">
           <input type="search" id="symbolSearch" placeholder="Filter by symbol..." class="search-input">
+          <button class="export-btn" id="exportCsv" title="Download table as CSV">Export CSV</button>
         </div>
         <div class="table-wrap">
           <table class="metrics-table">
             <thead>
               <tr>
                 <th class="sortable" data-sort="product_id" data-label="Symbol">Symbol</th>
+                <th>Trend</th>
+                <th class="sortable" data-sort="price_change_pct" data-label="Change">Change</th>
                 <th class="sortable" data-sort="trade_count" data-label="Trades">Trades</th>
                 <th class="sortable" data-sort="avg_price_usd" data-label="Avg Price (USD)">Avg Price (USD)</th>
                 <th class="sortable" data-sort="vwap_usd" data-label="VWAP (USD)" title="Volume-Weighted Average Price">VWAP (USD)</th>
@@ -90,12 +134,25 @@
         <div class="alerts" id="alerts"></div>
       </section>
 
+      <section class="section arbitrage-section" id="arbitrageSection">
+        <h2>Cross-Exchange Arbitrage Opportunities</h2>
+        <p class="section-desc">Price spread between exchanges exceeds threshold. Buy low, sell high.</p>
+        <div class="arbitrage-list" id="arbitrageList"></div>
+      </section>
+
       <section class="section charts">
         <div class="chart-container">
           <h3>Avg Price & Trade Count by Symbol</h3>
           <canvas id="barChart"></canvas>
         </div>
         <div class="chart-container">
+          <h3>Volume Distribution</h3>
+          <canvas id="donutChart"></canvas>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="chart-container chart-full">
           <h3>Avg Price Trend (30s buckets)</h3>
           <div class="chart-symbol-filters" id="lineChartFilters">
             <span class="filter-label">Show:</span>
@@ -109,8 +166,29 @@
 
       <footer class="footer">
         Window: last <span id="windowMinutes">3</span> minutes. Events tracked: <span id="eventCount">0</span>.
+        <a href="/api/docs" class="footer-link">API Docs</a>
       </footer>
     </main>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Symbol detail modal -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modalTitle">BTC-USD</h2>
+        <button class="modal-close" id="modalClose">&times;</button>
+      </div>
+      <div class="modal-stats" id="modalStats"></div>
+      <div class="modal-chart-controls">
+        <button class="modal-chart-btn active" data-chart-type="candlestick">Candlestick</button>
+        <button class="modal-chart-btn" data-chart-type="line">Line</button>
+      </div>
+      <div class="modal-chart-wrap">
+        <canvas id="modalChart"></canvas>
+      </div>
+    </div>
   </div>
 
   <script src="/js/app.js"></script>

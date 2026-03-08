@@ -4,7 +4,7 @@ from pathlib import Path
 from shutil import rmtree
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, from_json, to_timestamp, window
+from pyspark.sql.functions import coalesce, col, from_json, lit, to_timestamp, window
 from pyspark.sql.types import DoubleType, StringType, StructField, StructType
 
 repo_root = Path(__file__).resolve().parents[2]
@@ -42,12 +42,16 @@ def main() -> None:
     spark = _build_spark_session()
     spark.sparkContext.setLogLevel(spark_log_level.upper())
 
+    # Schema supports both raw Coinbase (type, product_id, price, time) and
+    # normalised multi-exchange (exchange, product_id, price, size, time)
     schema = StructType(
         [
             StructField("type", StringType(), True),
             StructField("product_id", StringType(), True),
             StructField("price", StringType(), True),
             StructField("time", StringType(), True),
+            StructField("exchange", StringType(), True),
+            StructField("size", StringType(), True),
         ]
     )
 
@@ -59,12 +63,15 @@ def main() -> None:
         .load()
     )
 
+    # Accept raw Coinbase (type=ticker) OR normalised multi-exchange (exchange present)
     parsed_stream = (
         raw_stream.selectExpr("CAST(value AS STRING) AS json_str")
         .select(from_json(col("json_str"), schema).alias("data"))
         .select("data.*")
-        .where(col("type") == "ticker")
+        .where((col("type") == "ticker") | col("exchange").isNotNull())
         .where(col("price").isNotNull())
+        .where(col("product_id").isNotNull())
+        .withColumn("exchange", coalesce(col("exchange"), lit("coinbase")))
     )
 
     metrics_stream = (

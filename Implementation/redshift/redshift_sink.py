@@ -28,6 +28,7 @@ import redshift_connector
 
 sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
 from utils.config import get_config
+from utils.parse_trade import parse_trade_message
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -98,16 +99,19 @@ def _upload_parquet(df: pd.DataFrame, s3_key: str):
 # ---------------------------------------------------------------------------
 
 def _compute_candles(df: pd.DataFrame) -> pd.DataFrame:
-    """Resample raw trades into 1-minute OHLCV candles per product."""
+    """Resample raw trades into 1-minute OHLCV candles per product and exchange."""
     if df.empty:
         return pd.DataFrame()
 
     df = df.copy()
+    if "exchange" not in df.columns:
+        df["exchange"] = "coinbase"
+    df["exchange"] = df["exchange"].fillna("coinbase")
     df["trade_time"] = pd.to_datetime(df["trade_time"], utc=True)
     df = df.set_index("trade_time")
 
     candles = (
-        df.groupby("product_id")
+        df.groupby(["product_id", "exchange"])
         .resample("1min", include_groups=False)
         .agg(
             open_price=("price", "first"),
@@ -136,7 +140,7 @@ def _compute_candles(df: pd.DataFrame) -> pd.DataFrame:
     candles = candles[candles["trade_count"] > 0]
     return candles[
         [
-            "window_start", "window_end", "product_id",
+            "window_start", "window_end", "product_id", "exchange",
             "open_price", "high_price", "low_price", "close_price",
             "volume", "trade_count", "vwap",
         ]
@@ -144,26 +148,8 @@ def _compute_candles(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# Message parsing
+# Message parsing — uses shared parser for raw Coinbase + normalised multi-exchange
 # ---------------------------------------------------------------------------
-
-def _parse_message(raw: dict) -> dict | None:
-    """Convert a Coinbase ticker message into a flat trade row."""
-    if raw.get("type") != "ticker" or "price" not in raw:
-        return None
-    try:
-        price = float(raw["price"])
-        size = float(raw.get("last_size") or raw.get("size") or 0)
-        return {
-            "trade_time": raw.get("time", datetime.now(timezone.utc).isoformat()),
-            "product_id": raw.get("product_id", "UNKNOWN"),
-            "price": price,
-            "size_qty": size,
-            "notional_usd": price * size,
-        }
-    except (ValueError, TypeError) as exc:
-        logger.warning("Skipping malformed message: %s — %s", raw, exc)
-        return None
 
 
 # ---------------------------------------------------------------------------
@@ -256,7 +242,7 @@ def main():
 
             for _tp, messages in batch.items():
                 for msg in messages:
-                    row = _parse_message(msg.value)
+                    row = parse_trade_message(msg.value)
                     if row:
                         buffer.append(row)
 

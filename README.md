@@ -1,6 +1,6 @@
 # Real-Time Cryptocurrency Streaming Pipeline
 
-Real-time market volatility and trade activity tracking using Kafka, PySpark, and live dashboards. The pipeline ingests live trade events from the Coinbase WebSocket API, streams them through Apache Kafka, processes them with PySpark Structured Streaming, and visualizes metrics through two dashboard frontends. It also supports persisting data to AWS via Redshift Serverless and Athena over S3 Parquet.
+Real-time market volatility and trade activity tracking using Kafka, PySpark, and live dashboards. The pipeline ingests live trade events from multiple exchanges (Coinbase, Binance, Kraken), streams them through Apache Kafka, processes them with PySpark Structured Streaming, and visualizes metrics through a Flask + HTML/JS dashboard. It also supports persisting data to AWS via Redshift Serverless and Athena over S3 Parquet.
 
 **Course:** CSIS 4495 – Applied Research Project  
 **Author:** Michael Hein (300375535)
@@ -8,17 +8,16 @@ Real-time market volatility and trade activity tracking using Kafka, PySpark, an
 ## Architecture
 
 ```
-Coinbase WebSocket API (ticker channel)
+  Coinbase / Binance / Kraken WebSocket APIs
         │
-        ▼
-  coinbase_producer.py ── WebSocket → Kafka
+        ├──▶ coinbase_producer.py   (single exchange, Coinbase only)
+        └──▶ multi_exchange_producer.py  (Coinbase + Binance + Kraken in parallel)
         │
         ▼
   Kafka topic: crypto.trades.raw
         │
         ├──▶ spark_stream.py        (PySpark windowed aggregations → console)
-        ├──▶ streamlit_app.py       (Streamlit real-time dashboard)
-        ├──▶ api_server.py          (Flask REST API → HTML/JS dashboard)
+        ├──▶ api_server.py          (Flask REST API → HTML/JS dashboard, /health)
         ├──▶ redshift_sink.py       (Kafka → S3 Parquet → Redshift COPY)
         └──▶ s3_sink.py             (Kafka → S3 Parquet → Athena queries)
                                                               │
@@ -38,8 +37,7 @@ Coinbase WebSocket API (ticker channel)
 | Containers | Docker & Docker Compose | — |
 | Data Source | Coinbase WebSocket API | — |
 | Stream Processing | PySpark Structured Streaming | 3.5.0 |
-| Dashboard (Option A) | Flask + HTML/CSS/JS + Chart.js | — |
-| Dashboard (Option B) | Streamlit | ≥1.32.0 |
+| Dashboard | Flask + HTML/CSS/JS + Chart.js | — |
 | Data Warehouse | Amazon Redshift Serverless | — |
 | Query Engine | Amazon Athena | — |
 | BI Dashboards | Amazon QuickSight (SPICE) | — |
@@ -98,9 +96,20 @@ The default `.env` values work out of the box for local development:
 | `KAFKA_TOPIC_RAW` | `crypto.trades.raw` | Topic for raw trade events |
 | `COINBASE_WS_URL` | `wss://ws-feed.exchange.coinbase.com` | Coinbase WebSocket endpoint |
 | `CRYPTO_SYMBOLS` | `BTC-USD,ETH-USD,...` (10 symbols) | Comma-separated trading pairs |
+| `EXCHANGES` | `coinbase,binance,kraken` | Comma-separated exchanges for multi-exchange producer |
+| `BINANCE_WS_URL` | `wss://stream.binance.com:9443` | Binance WebSocket endpoint |
+| `KRAKEN_WS_URL` | `wss://ws.kraken.com/v2` | Kraken WebSocket endpoint |
 | `LOG_LEVEL` | `INFO` | Application log level |
 | `SPARK_LOG_LEVEL` | `WARN` | Spark log verbosity |
 | `CHECKPOINT_DIR` | `data/checkpoints/raw_console` | Spark checkpoint directory |
+| `SLACK_WEBHOOK_URL` | — | Slack webhook for arbitrage & volume spike alerts |
+| `ALERT_EMAIL_TO` | — | Comma-separated email addresses for alerts |
+| `SMTP_HOST` | — | SMTP server (e.g. `smtp.gmail.com`) |
+| `SMTP_PORT` | `587` | SMTP port |
+| `SMTP_USER` | — | SMTP username (often your email) |
+| `SMTP_PASSWORD` | — | SMTP password or app password |
+| `ALERT_ARBITRAGE_THRESHOLD_PCT` | `0.3` | Min spread % to trigger arbitrage alert |
+| `ALERT_VOLUME_SPIKE_RATIO` | `2.0` | Volume spike ratio to trigger alert |
 
 For AWS sinks, see the [AWS Data Sinks](#aws-data-sinks-optional) section below.
 
@@ -126,18 +135,33 @@ The pipeline has three layers that should be started in order. Open a separate t
 
 ### Step 1 — Start the Kafka Producer
 
-The producer connects to the Coinbase WebSocket API and publishes live trade events to Kafka:
+**Option A: Single exchange (Coinbase only)**
 
 ```bash
 python Implementation/producer/coinbase_producer.py
 ```
 
+**Option B: Multi-exchange (Coinbase, Binance, Kraken)**
+
+Runs all three exchanges in parallel, normalising trades to a common schema with an `exchange` field:
+
+```bash
+python Implementation/producer/multi_exchange_producer.py
+```
+
+To enable only specific exchanges:
+
+```bash
+EXCHANGES=coinbase,binance python Implementation/producer/multi_exchange_producer.py
+```
+
 You should see log output like:
 
 ```
-INFO - Starting Producer for ['BTC-USD', 'ETH-USD', ...]...
-INFO - Streaming BTC-USD: $97432.10
-INFO - Streaming ETH-USD: $2741.55
+INFO - Enabled exchanges: ['coinbase', 'binance', 'kraken']
+INFO - [coinbase] BTC-USD: $97432.10
+INFO - [binance] BTC-USDT: $97430.50
+INFO - [kraken] BTC-USD: $97435.00
 ```
 
 ### Step 2 — Start the Spark Consumer (Optional)
@@ -156,11 +180,7 @@ To reset Spark checkpoints (useful if you encounter checkpoint errors):
 RESET_CHECKPOINT=true python Implementation/consumer/spark_stream.py
 ```
 
-### Step 3 — Start a Dashboard
-
-Choose **one** of the two dashboard options:
-
-#### Option A: Flask + HTML/JS Dashboard
+### Step 3 — Start the Dashboard
 
 ```bash
 python Implementation/dashboard/api_server.py
@@ -173,8 +193,14 @@ Features:
 - Sortable, filterable metrics table
 - Real-time price trend line chart (30-second buckets)
 - Volume spike alerts
-- KPI cards (total trades, live symbols, total volume, data freshness)
-- Configurable refresh rate (1–5 seconds)
+- **Cross-exchange arbitrage detection** — highlights price spreads between exchanges
+- **Configurable alerts** — Slack and/or email for arbitrage opportunities and volume spikes
+- **Exchange filter** — filter metrics by Coinbase, Binance, or Kraken (dropdown + clickable pills)
+- KPI cards (total trades, live symbols, total volume, live exchanges, data freshness)
+- Exchange pills showing trade counts per exchange (click to filter)
+- Configurable refresh rate (1–5 seconds) and time window (1m, 3m, 5m, 10m)
+- Health endpoint at `/health` for Kafka connectivity and data freshness
+- REST API documentation at `/api/docs`
 
 To run on a different port:
 
@@ -183,22 +209,6 @@ DASHBOARD_PORT=8080 python Implementation/dashboard/api_server.py
 ```
 
 Open **http://localhost:8080** (or `http://192.168.1.77:8080` from another device on your network) in your browser.
-
-#### Option B: Streamlit Dashboard
-
-```bash
-streamlit run Implementation/dashboard/streamlit_app.py
-```
-
-Open the URL shown in terminal output (default: **http://localhost:8501**).
-
-Features:
-- Rolling 3-minute metrics with VWAP and volatility
-- Live bar chart (avg price + trade count per symbol)
-- 30-second price trend line chart
-- Volume spike detection and alerts
-- Kafka connection status and data freshness indicators
-- Sidebar controls for refresh interval and live toggle
 
 ## AWS Data Sinks (Optional)
 
@@ -308,15 +318,20 @@ cryto-streaming-pipeline/
 │   └── env.example                 # Environment variable template
 ├── src/
 │   └── utils/
-│       └── config.py               # Centralized AppConfig loader
+│       ├── config.py               # Centralized AppConfig loader
+│       └── parse_trade.py          # Shared trade message parser (raw + normalised)
 ├── Implementation/
 │   ├── producer/
-│   │   └── coinbase_producer.py    # Kafka producer (Coinbase WebSocket → Kafka)
+│   │   ├── coinbase_producer.py    # Single-exchange producer (Coinbase only)
+│   │   ├── multi_exchange_producer.py  # Multi-exchange (Coinbase, Binance, Kraken)
+│   │   ├── base_exchange.py        # Abstract base for exchange adapters
+│   │   ├── exchange_coinbase.py   # Coinbase WebSocket adapter
+│   │   ├── exchange_binance.py    # Binance WebSocket adapter
+│   │   └── exchange_kraken.py     # Kraken WebSocket adapter
 │   ├── consumer/
 │   │   └── spark_stream.py         # PySpark consumer (windowed aggregations)
 │   ├── dashboard/
 │   │   ├── api_server.py           # Flask REST API backend
-│   │   ├── streamlit_app.py        # Streamlit dashboard (full-featured)
 │   │   └── web/
 │   │       ├── index.html          # Dashboard HTML frontend
 │   │       ├── css/styles.css      # Dark theme styles
@@ -355,3 +370,4 @@ cryto-streaming-pipeline/
 | Athena query returns no results | Ensure the S3 sink is running and files exist under `s3://<bucket>/<prefix>/` |
 | QuickSight `AccessDeniedException` | Ensure QuickSight has permission to access your S3 bucket and Athena (QuickSight console → Manage QuickSight → Security & permissions) |
 | QuickSight datasets show 0 rows | Trigger a SPICE refresh: re-run `setup_quicksight.py` or refresh manually in the Datasets page |
+| Redshift/Athena: `exchange` column missing | For existing deployments, run `ALTER TABLE crypto.raw_trades ADD COLUMN exchange VARCHAR(20) DEFAULT 'coinbase';` and same for `crypto.candles_1m`. See `Implementation/redshift/schema.sql` for migration notes |
