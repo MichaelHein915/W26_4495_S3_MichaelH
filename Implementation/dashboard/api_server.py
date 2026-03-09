@@ -242,6 +242,64 @@ def _compute_arbitrage_opportunities(
     return sorted(opportunities, key=lambda x: -x["spread_pct"])
 
 
+def _compute_exchange_metrics(events: list) -> list[dict]:
+    """Per (product_id, exchange): avg_price, trade_count, total_volume for exchange comparison chart."""
+    if not events:
+        return []
+    df = pd.DataFrame(events)
+    if "exchange" not in df.columns:
+        df["exchange"] = "coinbase"
+    df["exchange"] = df["exchange"].fillna("coinbase")
+    agg = (
+        df.groupby(["product_id", "exchange"], as_index=False)
+        .agg(
+            avg_price_usd=("price_usd", "mean"),
+            trade_count=("price_usd", "count"),
+            total_volume_qty=("size_qty", "sum"),
+        )
+    )
+    for col in ["avg_price_usd", "total_volume_qty"]:
+        agg[col] = agg[col].round(4 if col == "total_volume_qty" else 2)
+    return agg.to_dict(orient="records")
+
+
+def _compute_volume_timeseries(events: list) -> list[dict]:
+    """Total volume per 30s bucket for volume-over-time chart."""
+    if not events:
+        return []
+    df = pd.DataFrame(events)
+    df["event_time"] = pd.to_datetime(df["event_time"], utc=True)
+    ts = (
+        df.set_index("event_time")
+        .resample("30s")
+        .agg(total_volume_qty=("size_qty", "sum"))
+        .reset_index()
+        .dropna()
+    )
+    ts["event_time"] = ts["event_time"].dt.strftime("%Y-%m-%dT%H:%M:%S")
+    ts["total_volume_qty"] = ts["total_volume_qty"].round(4)
+    return ts.to_dict(orient="records")
+
+
+def _get_recent_trades(events: list, limit: int = 20) -> list[dict]:
+    """Last N trades for ticker display."""
+    if not events:
+        return []
+    sorted_events = sorted(events, key=lambda e: e["event_time"], reverse=True)
+    out = []
+    for e in sorted_events[:limit]:
+        t = e["event_time"]
+        time_str = t.strftime("%H:%M:%S") if hasattr(t, "strftime") else str(t)[:19]
+        out.append({
+            "product_id": e["product_id"],
+            "price_usd": round(float(e["price_usd"]), 2),
+            "size_qty": round(float(e.get("size_qty", 0)), 4),
+            "exchange": e.get("exchange", "coinbase"),
+            "event_time": time_str,
+        })
+    return out
+
+
 def _compute_exchange_stats(events: list) -> dict:
     """Per-exchange trade count and list of unique exchanges seen."""
     if not events:
@@ -457,6 +515,9 @@ def dashboard():
     timeseries = _compute_timeseries(events)
     sparklines = _compute_sparklines(events)
     exchange_stats = _compute_exchange_stats(events)
+    exchange_metrics = _compute_exchange_metrics(events)
+    volume_timeseries = _compute_volume_timeseries(events)
+    recent_trades = _get_recent_trades(events, limit=25)
     volume_history = {
         k: deque(v, maxlen=30) for k, v in meta.get("volume_history", {}).items()
     }
@@ -518,6 +579,9 @@ def dashboard():
             "alerts": alerts,
             "arbitrage": arbitrage,
             "exchange_stats": exchange_stats,
+            "exchange_metrics": exchange_metrics,
+            "volume_timeseries": volume_timeseries,
+            "recent_trades": recent_trades,
             "status": {
                 "kafka_status": kafka_status,
                 "kafka_error": kafka_error,

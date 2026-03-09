@@ -4,6 +4,9 @@ let barChart = null;
 let lineChart = null;
 let donutChart = null;
 let modalChart = null;
+let volatilityChart = null;
+let volumeChart = null;
+let exchangeChart = null;
 let refreshTimer = null;
 let metricsCache = [];
 let tableSortKey = 'product_id';
@@ -49,6 +52,8 @@ const exchangeFilterEl = el('exchangeFilter');
 const arbitrageListEl = el('arbitrageList');
 const arbitrageSectionEl = el('arbitrageSection');
 const toastContainerEl = el('toastContainer');
+const tickerTrackEl = el('tickerTrack');
+const tickerSectionEl = el('tickerSection');
 
 function setStatusClass(elem, status) {
   elem.classList.remove('ok', 'warn', 'error');
@@ -70,7 +75,7 @@ function applyTheme(theme) {
   }
   localStorage.setItem('theme', theme);
 
-  [barChart, lineChart, donutChart].forEach((c) => {
+  [barChart, lineChart, donutChart, volatilityChart, volumeChart, exchangeChart].forEach((c) => {
     if (!c) return;
     const txtColor = theme === 'light' ? '#656d76' : '#8b949e';
     const gridColor = theme === 'light' ? 'rgba(0,0,0,0.08)' : 'rgba(48,54,61,0.3)';
@@ -514,6 +519,137 @@ function updateBarChart(metrics) {
   barChart.update();
 }
 
+function renderTicker(recentTrades) {
+  if (!tickerTrackEl || !tickerSectionEl) return;
+  if (!recentTrades?.length) {
+    tickerSectionEl.style.display = 'none';
+    return;
+  }
+  tickerSectionEl.style.display = 'block';
+  tickerTrackEl.innerHTML = recentTrades.map((t) =>
+    `<span class="ticker-item"><span class="ticker-symbol">${t.product_id}</span> ` +
+    `$${t.price_usd.toLocaleString()} <span class="ticker-size">×${fmtVol(t.size_qty)}</span> ` +
+    `<span class="ticker-exchange">${t.exchange}</span> <span class="ticker-time">${t.event_time}</span></span>`
+  ).join('');
+}
+
+function updateVolatilityChart(metrics) {
+  const ctx = el('volatilityChart')?.getContext('2d');
+  const tc = getThemeColors();
+  if (!metrics?.length) { if (volatilityChart) volatilityChart.data.datasets = []; return; }
+  const labels = metrics.map((m) => m.product_id);
+  const vols = metrics.map((m) => m.volatility_usd);
+  const colors = metrics.map((m) => m.price_change_pct >= 0 ? 'rgba(63, 185, 80, 0.7)' : 'rgba(248, 81, 73, 0.7)');
+
+  if (!volatilityChart) {
+    volatilityChart = new Chart(ctx, {
+      type: 'bar',
+      data: { labels, datasets: [{ label: 'Volatility (USD)', data: vols, backgroundColor: colors, borderRadius: 4 }] },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: tc.text }, grid: { color: tc.grid } },
+          y: { ticks: { color: tc.text }, grid: { color: tc.grid } },
+        },
+      },
+    });
+  } else {
+    volatilityChart.data.labels = labels;
+    volatilityChart.data.datasets[0].data = vols;
+    volatilityChart.data.datasets[0].backgroundColor = colors;
+  }
+  volatilityChart.update();
+}
+
+function updateVolumeChart(volumeTs) {
+  const ctx = el('volumeChart')?.getContext('2d');
+  const tc = getThemeColors();
+  if (!volumeTs?.length) { if (volumeChart) volumeChart.data.datasets = []; return; }
+  const labels = volumeTs.map((r) => r.event_time.split('T')[1] || r.event_time);
+  const volumes = volumeTs.map((r) => r.total_volume_qty);
+
+  if (!volumeChart) {
+    volumeChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Total Volume',
+          data: volumes,
+          borderColor: CHART_COLORS[2],
+          backgroundColor: 'rgba(210, 153, 34, 0.15)',
+          fill: true, tension: 0.3, pointRadius: 0, pointHitRadius: 6,
+        }],
+      },
+      plugins: [gradientFillPlugin],
+      options: {
+        responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: tc.text, maxTicksLimit: 8 }, grid: { color: tc.grid } },
+          y: { ticks: { color: tc.text }, grid: { color: tc.grid } },
+        },
+      },
+    });
+  } else {
+    volumeChart.data.labels = labels;
+    volumeChart.data.datasets[0].data = volumes;
+  }
+  volumeChart.update();
+}
+
+function updateExchangeChart(exchangeMetrics) {
+  const ctx = el('exchangeChart')?.getContext('2d');
+  const tc = getThemeColors();
+  if (!exchangeMetrics?.length) {
+    if (exchangeChart) exchangeChart.data.datasets = [];
+    el('exchangeChartSection')?.style.setProperty('display', 'none');
+    return;
+  }
+  el('exchangeChartSection')?.style.setProperty('display', 'block');
+
+  const bySymbol = {};
+  exchangeMetrics.forEach((r) => {
+    if (!bySymbol[r.product_id]) bySymbol[r.product_id] = {};
+    bySymbol[r.product_id][r.exchange] = r.avg_price_usd;
+  });
+  const symbols = Object.keys(bySymbol).sort();
+  const exchanges = [...new Set(exchangeMetrics.map((r) => r.exchange))].sort();
+  if (exchanges.length < 2) {
+    if (exchangeChart) exchangeChart.data.datasets = [];
+    el('exchangeChartSection')?.style.setProperty('display', 'none');
+    return;
+  }
+
+  const datasets = exchanges.map((ex, i) => ({
+    label: ex,
+    data: symbols.map((s) => bySymbol[s]?.[ex] ?? null),
+    backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
+    borderRadius: 4,
+  }));
+
+  if (!exchangeChart) {
+    exchangeChart = new Chart(ctx, {
+      type: 'bar',
+      data: { labels: symbols, datasets },
+      options: {
+        responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { labels: { color: tc.text } } },
+        scales: {
+          x: { ticks: { color: tc.text }, grid: { color: tc.gridStrong } },
+          y: { ticks: { color: tc.text }, grid: { color: tc.grid } },
+        },
+      },
+    });
+  } else {
+    exchangeChart.data.labels = symbols;
+    exchangeChart.data.datasets = datasets;
+  }
+  exchangeChart.update();
+}
+
 function updateDonutChart(metrics) {
   const ctx = el('donutChart').getContext('2d');
   const tc = getThemeColors();
@@ -833,8 +969,12 @@ async function refresh() {
   updateSortIndicator();
   renderAlerts(data.alerts);
   renderArbitrage(data.arbitrage);
+  renderTicker(data.recent_trades);
   updateBarChart(data.metrics);
   updateDonutChart(data.metrics);
+  updateVolatilityChart(data.metrics);
+  updateVolumeChart(data.volume_timeseries);
+  updateExchangeChart(data.exchange_metrics);
   updateLineChart(data.timeseries);
 }
 

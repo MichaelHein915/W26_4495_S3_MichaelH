@@ -140,6 +140,13 @@
         <div class="arbitrage-list" id="arbitrageList"></div>
       </section>
 
+      <section class="section ticker-section" id="tickerSection">
+        <h3>Recent Trades</h3>
+        <div class="ticker-wrap" id="tickerWrap">
+          <div class="ticker-track" id="tickerTrack"></div>
+        </div>
+      </section>
+
       <section class="section charts">
         <div class="chart-container">
           <h3>Avg Price & Trade Count by Symbol</h3>
@@ -148,6 +155,25 @@
         <div class="chart-container">
           <h3>Volume Distribution</h3>
           <canvas id="donutChart"></canvas>
+        </div>
+      </section>
+
+      <section class="section charts">
+        <div class="chart-container">
+          <h3>Volatility by Symbol</h3>
+          <canvas id="volatilityChart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>Volume Over Time</h3>
+          <canvas id="volumeChart"></canvas>
+        </div>
+      </section>
+
+      <section class="section" id="exchangeChartSection">
+        <h3>Exchange Price Comparison</h3>
+        <p class="section-desc">Average price per symbol across exchanges (multi-exchange data only)</p>
+        <div class="chart-container chart-full">
+          <canvas id="exchangeChart"></canvas>
         </div>
       </section>
 

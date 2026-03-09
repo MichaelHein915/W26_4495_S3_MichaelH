@@ -190,7 +190,11 @@ Open **http://localhost:5000** in your browser.
 
 Features:
 - Dark terminal-themed UI with Chart.js visualizations
-- Sortable, filterable metrics table
+- **Recent trades ticker** — Last 25 trades with symbol, price, size, exchange
+- Sortable, filterable metrics table with sparklines
+- **Volatility chart** — Horizontal bar chart of price volatility by symbol
+- **Volume over time** — Line chart of total volume per 30-second bucket
+- **Exchange price comparison** — Grouped bar chart comparing prices across Coinbase, Binance, Kraken (multi-exchange only)
 - Real-time price trend line chart (30-second buckets)
 - Volume spike alerts
 - **Cross-exchange arbitrage detection** — highlights price spreads between exchanges
