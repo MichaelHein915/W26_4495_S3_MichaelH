@@ -41,6 +41,8 @@ const dataFreshnessEl = el('dataFreshness');
 const metricsBodyEl = el('metricsBody');
 const alertsEl = el('alerts');
 const alertsSectionEl = el('alertsSection');
+const priceAlertsEl = el('priceAlerts');
+const priceAlertsSectionEl = el('priceAlertsSection');
 const updatedAtEl = el('updatedAt');
 const eventCountEl = el('eventCount');
 const windowMinutesEl = el('windowMinutes');
@@ -445,6 +447,19 @@ function renderAlerts(alerts) {
     `(baseline ${a.baseline_volume.toFixed(4)}, ${a.spike_ratio}x)</div>`
   ).join('');
   notifyAlerts(alerts);
+}
+
+function renderPriceAlerts(priceAlerts) {
+  if (!priceAlertsSectionEl || !priceAlertsEl) return;
+  if (!priceAlerts?.length) {
+    priceAlertsSectionEl.style.display = 'none';
+    return;
+  }
+  priceAlertsSectionEl.style.display = 'block';
+  priceAlertsEl.innerHTML = priceAlerts.map((a) =>
+    `<div class="alert alert-price"><span class="alert-icon">💰</span> ${a.product_id}: ` +
+    `$${a.current_price.toLocaleString()} ${a.direction === 'above' ? '≥' : '≤'} $${a.threshold_price.toLocaleString()}</div>`
+  ).join('');
 }
 
 function renderArbitrage(arbitrage) {
@@ -968,6 +983,7 @@ async function refresh() {
   renderMetricsTable(data.metrics);
   updateSortIndicator();
   renderAlerts(data.alerts);
+  renderPriceAlerts(data.price_alerts);
   renderArbitrage(data.arbitrage);
   renderTicker(data.recent_trades);
   updateBarChart(data.metrics);

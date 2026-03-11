@@ -17,7 +17,7 @@ from kafka import KafkaConsumer
 repo_root = Path(__file__).resolve().parents[2]
 sys.path.append(str(repo_root / "src"))
 from utils.config import get_config
-from utils.alerts import alert_arbitrage, alert_volume_spike
+from utils.alerts import alert_arbitrage, alert_volume_spike, alert_price_threshold
 
 app = Flask(__name__, static_folder="web", static_url_path="/")
 
@@ -394,6 +394,12 @@ def index():
     return send_from_directory(app.static_folder, "index.html")
 
 
+@app.route("/favicon.ico")
+def favicon():
+    """Prevent 404 when browser requests favicon."""
+    return "", 204
+
+
 @app.route("/api/docs")
 def api_docs():
     """REST API documentation."""
@@ -475,18 +481,13 @@ def _compute_volume_spikes(
     return alerts, volume_history
 
 
-@app.route("/api/dashboard")
-def dashboard():
-    """Single endpoint returning all dashboard data."""
-    window_minutes = int(request.args.get("window", WINDOW_MINUTES))
-    window_minutes = max(1, min(window_minutes, 30))
-    exchange_filter = request.args.get("exchange", "").strip().lower()
-
+def _build_dashboard_payload(
+    window_minutes: int, exchange_filter: str
+) -> dict:
+    """Build full dashboard payload for given window and exchange filter."""
     events, meta = _get_events()
-
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
     events = [e for e in events if e["event_time"] >= cutoff]
-
     if exchange_filter:
         events = [e for e in events if e.get("exchange", "coinbase").lower() == exchange_filter]
 
@@ -538,6 +539,39 @@ def dashboard():
             smtp_password=config.smtp_password,
             smtp_use_tls=config.smtp_use_tls,
         )
+
+    price_alerts = []
+    for symbol, direction, threshold_price in config.alert_price_thresholds:
+        for m in metrics:
+            if m["product_id"].upper() == symbol.upper():
+                current = float(m["avg_price_usd"])
+                triggered = (direction == "above" and current >= threshold_price) or (
+                    direction == "below" and current <= threshold_price
+                )
+                if triggered:
+                    price_alerts.append(
+                        {
+                            "product_id": m["product_id"],
+                            "direction": direction,
+                            "threshold_price": threshold_price,
+                            "current_price": current,
+                        }
+                    )
+                    alert_price_threshold(
+                        config.slack_webhook_url,
+                        m["product_id"],
+                        direction,
+                        threshold_price,
+                        current,
+                        email_to=config.alert_email_to,
+                        smtp_host=config.smtp_host,
+                        smtp_port=config.smtp_port,
+                        smtp_user=config.smtp_user,
+                        smtp_password=config.smtp_password,
+                        smtp_use_tls=config.smtp_use_tls,
+                    )
+                break
+
     with _state_lock:
         _state["volume_history"] = {k: list(v) for k, v in volume_history.items()}
 
@@ -547,7 +581,6 @@ def dashboard():
     if last_event_time:
         freshness_seconds = (now - last_event_time).total_seconds()
 
-    # Use last 50 events only – reflects pipeline latency, not full-window age
     latency_seconds = None
     if events:
         recent = events[-50:]
@@ -571,31 +604,39 @@ def dashboard():
     total_volume = sum(m["total_volume_qty"] for m in metrics)
     live_symbols = len(metrics)
 
-    return jsonify(
-        {
-            "metrics": metrics,
-            "timeseries": timeseries,
-            "sparklines": sparklines,
-            "alerts": alerts,
-            "arbitrage": arbitrage,
-            "exchange_stats": exchange_stats,
-            "exchange_metrics": exchange_metrics,
-            "volume_timeseries": volume_timeseries,
-            "recent_trades": recent_trades,
-            "status": {
-                "kafka_status": kafka_status,
-                "kafka_error": kafka_error,
-                "freshness_seconds": freshness_seconds,
-                "latency_seconds": latency_seconds,
-                "total_trades": total_trades,
-                "total_volume": total_volume,
-                "live_symbols": live_symbols,
-                "event_count": event_count,
-                "window_minutes": window_minutes,
-                "updated_at": now.strftime("%H:%M:%S UTC"),
-            },
-        }
-    )
+    return {
+        "metrics": metrics,
+        "timeseries": timeseries,
+        "sparklines": sparklines,
+        "alerts": alerts,
+        "price_alerts": price_alerts,
+        "arbitrage": arbitrage,
+        "exchange_stats": exchange_stats,
+        "exchange_metrics": exchange_metrics,
+        "volume_timeseries": volume_timeseries,
+        "recent_trades": recent_trades,
+        "status": {
+            "kafka_status": kafka_status,
+            "kafka_error": kafka_error,
+            "freshness_seconds": freshness_seconds,
+            "latency_seconds": latency_seconds,
+            "total_trades": total_trades,
+            "total_volume": total_volume,
+            "live_symbols": live_symbols,
+            "event_count": event_count,
+            "window_minutes": window_minutes,
+            "updated_at": now.strftime("%H:%M:%S UTC"),
+        },
+    }
+
+
+@app.route("/api/dashboard")
+def dashboard():
+    """Single endpoint returning all dashboard data."""
+    window_minutes = int(request.args.get("window", WINDOW_MINUTES))
+    window_minutes = max(1, min(window_minutes, 30))
+    exchange_filter = request.args.get("exchange", "").strip().lower()
+    return jsonify(_build_dashboard_payload(window_minutes, exchange_filter))
 
 
 def main():

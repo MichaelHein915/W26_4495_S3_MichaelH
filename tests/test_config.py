@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from utils.config import AppConfig, _parse_symbols, get_config
+from utils.config import AppConfig, _parse_price_thresholds, _parse_symbols, get_config
 
 
 class TestParseSymbols:
@@ -25,6 +25,40 @@ class TestParseSymbols:
 
     def test_trailing_comma(self):
         assert _parse_symbols("BTC-USD,ETH-USD,") == ["BTC-USD", "ETH-USD"]
+
+
+class TestParsePriceThresholds:
+    def test_valid_above(self):
+        assert _parse_price_thresholds("BTC-USD:above:100000") == [
+            ("BTC-USD", "above", 100000.0)
+        ]
+
+    def test_valid_below(self):
+        assert _parse_price_thresholds("ETH-USD:below:3000") == [
+            ("ETH-USD", "below", 3000.0)
+        ]
+
+    def test_multiple(self):
+        result = _parse_price_thresholds("BTC-USD:above:100000,ETH-USD:below:3000,SOL-USD:above:200")
+        assert result == [
+            ("BTC-USD", "above", 100000.0),
+            ("ETH-USD", "below", 3000.0),
+            ("SOL-USD", "above", 200.0),
+        ]
+
+    def test_empty_string(self):
+        assert _parse_price_thresholds("") == []
+
+    def test_invalid_skipped(self):
+        result = _parse_price_thresholds("BTC-USD:above:100000,invalid,SOL-USD:below:50")
+        assert result == [
+            ("BTC-USD", "above", 100000.0),
+            ("SOL-USD", "below", 50.0),
+        ]
+
+    def test_invalid_direction_skipped(self):
+        result = _parse_price_thresholds("BTC-USD:equals:100000")
+        assert result == []
 
 
 class TestGetConfig:
@@ -71,6 +105,17 @@ class TestGetConfig:
         assert cfg.aws_region == "eu-west-1"
         assert cfg.sink_flush_interval_sec == 30
         assert cfg.sink_flush_max_records == 1000
+
+    def test_alert_price_thresholds(self):
+        env = {
+            "ALERT_PRICE_THRESHOLDS": "BTC-USD:above:100000,ETH-USD:below:3000",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            cfg = get_config()
+        assert cfg.alert_price_thresholds == [
+            ("BTC-USD", "above", 100000.0),
+            ("ETH-USD", "below", 3000.0),
+        ]
 
     def test_config_is_frozen(self):
         cfg = get_config()

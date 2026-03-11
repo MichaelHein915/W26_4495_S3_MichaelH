@@ -23,6 +23,7 @@
         <select id="refreshRate" title="Refresh interval">
           <option value="1">1s</option>
           <option value="2" selected>2s</option>
+          <option value="2">2s</option>
           <option value="3">3s</option>
           <option value="5">5s</option>
         </select>
@@ -132,6 +133,12 @@
       <section class="section alerts-section" id="alertsSection">
         <h2>Volume Spike Alerts</h2>
         <div class="alerts" id="alerts"></div>
+      </section>
+
+      <section class="section alerts-section" id="priceAlertsSection">
+        <h2>Price Threshold Alerts</h2>
+        <p class="section-desc">Configure via ALERT_PRICE_THRESHOLDS (e.g. BTC-USD:above:100000,ETH-USD:below:3000)</p>
+        <div class="alerts" id="priceAlerts"></div>
       </section>
 
       <section class="section arbitrage-section" id="arbitrageSection">

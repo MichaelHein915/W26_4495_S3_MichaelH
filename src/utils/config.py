@@ -53,10 +53,30 @@ class AppConfig:
     smtp_use_tls: bool = True
     alert_arbitrage_threshold_pct: float = 0.3
     alert_volume_spike_ratio: float = 2.0
+    alert_price_thresholds: list[tuple[str, str, float]] = field(default_factory=list)
 
 
 def _parse_symbols(raw: str) -> list[str]:
     return [symbol.strip() for symbol in raw.split(",") if symbol.strip()]
+
+
+def _parse_price_thresholds(raw: str) -> list[tuple[str, str, float]]:
+    """Parse ALERT_PRICE_THRESHOLDS: 'BTC-USD:above:100000,ETH-USD:below:3000'."""
+    result = []
+    for part in (raw or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            symbol, direction, price_str = part.split(":")
+            symbol = symbol.strip().upper()
+            direction = direction.strip().lower()
+            price = float(price_str.strip())
+            if direction in ("above", "below") and price > 0:
+                result.append((symbol, direction, price))
+        except (ValueError, TypeError):
+            continue
+    return result
 
 
 def get_config() -> AppConfig:
@@ -98,4 +118,5 @@ def get_config() -> AppConfig:
         smtp_use_tls=os.getenv("SMTP_USE_TLS", "true").lower() in ("1", "true", "yes"),
         alert_arbitrage_threshold_pct=float(os.getenv("ALERT_ARBITRAGE_THRESHOLD_PCT", "0.3")),
         alert_volume_spike_ratio=float(os.getenv("ALERT_VOLUME_SPIKE_RATIO", "2.0")),
+        alert_price_thresholds=_parse_price_thresholds(os.getenv("ALERT_PRICE_THRESHOLDS", "")),
     )

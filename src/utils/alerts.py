@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 _last_arbitrage_alert: dict[str, datetime] = {}
 _last_volume_alert: dict[str, datetime] = {}
+_last_price_alert: dict[str, datetime] = {}
 _alert_cooldown_sec = 60  # Don't re-alert same condition within 60 seconds
 
 
@@ -154,4 +155,47 @@ def alert_volume_spike(
         )
     if slack_ok or email_ok:
         logger.info("Volume spike alert sent: %s %.1fx", product_id, spike_ratio)
+    return slack_ok or email_ok
+
+
+def alert_price_threshold(
+    webhook_url: str,
+    product_id: str,
+    direction: str,
+    threshold_price: float,
+    current_price: float,
+    *,
+    email_to: str = "",
+    smtp_host: str = "",
+    smtp_port: int = 587,
+    smtp_user: str = "",
+    smtp_password: str = "",
+    smtp_use_tls: bool = True,
+) -> bool:
+    """Send price threshold alert to Slack and/or email."""
+    key = f"{product_id}:{direction}:{threshold_price}"
+    now = datetime.now(timezone.utc)
+    if key in _last_price_alert:
+        if (now - _last_price_alert[key]).total_seconds() < _alert_cooldown_sec:
+            return False
+    _last_price_alert[key] = now
+
+    direction_label = "above" if direction == "above" else "below"
+    text = (
+        f"Price alert: {product_id}\n"
+        f"- Current price: ${current_price:,.2f}\n"
+        f"- Threshold: ${threshold_price:,.2f} ({direction_label})"
+    )
+    slack_ok = _send_slack(webhook_url, text)
+    email_ok = False
+    if email_to and smtp_host:
+        recipients = [a.strip() for a in email_to.split(",") if a.strip()]
+        email_ok = _send_email(
+            smtp_host, smtp_port, smtp_user, smtp_password, smtp_use_tls,
+            recipients,
+            subject=f"[Crypto Alert] {product_id} ${current_price:,.2f} ({direction_label} ${threshold_price:,.2f})",
+            body=text,
+        )
+    if slack_ok or email_ok:
+        logger.info("Price threshold alert sent: %s %s $%.2f", product_id, direction_label, threshold_price)
     return slack_ok or email_ok
