@@ -1,0 +1,25 @@
+# Git and IDE
+.git
+.gitignore
+.cursor
+.vscode
+*.md
+
+# Python
+venv
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.coverage
+coverage.xml
+htmlcov
+
+# Data and checkpoints
+data/
+
+# Tests (not needed in producer image)
+tests/
+
+# Docs
+DocumentsAndReports/

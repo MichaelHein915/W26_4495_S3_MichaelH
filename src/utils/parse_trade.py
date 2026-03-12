@@ -45,11 +45,7 @@ def parse_trade_message(raw: dict[str, Any]) -> dict[str, Any] | None:
             return None
 
     # Format 2: Normalised multi-exchange (exchange, product_id, price, size, time)
-    if (
-        raw.get("exchange")
-        and raw.get("product_id") is not None
-        and raw.get("price") is not None
-    ):
+    if raw.get("exchange") and raw.get("product_id") is not None and raw.get("price") is not None:
         try:
             price = float(raw["price"])
             size = float(raw.get("size") or 0)

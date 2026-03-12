@@ -29,14 +29,10 @@ class TestParseSymbols:
 
 class TestParsePriceThresholds:
     def test_valid_above(self):
-        assert _parse_price_thresholds("BTC-USD:above:100000") == [
-            ("BTC-USD", "above", 100000.0)
-        ]
+        assert _parse_price_thresholds("BTC-USD:above:100000") == [("BTC-USD", "above", 100000.0)]
 
     def test_valid_below(self):
-        assert _parse_price_thresholds("ETH-USD:below:3000") == [
-            ("ETH-USD", "below", 3000.0)
-        ]
+        assert _parse_price_thresholds("ETH-USD:below:3000") == [("ETH-USD", "below", 3000.0)]
 
     def test_multiple(self):
         result = _parse_price_thresholds("BTC-USD:above:100000,ETH-USD:below:3000,SOL-USD:above:200")

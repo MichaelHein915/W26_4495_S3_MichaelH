@@ -31,10 +31,7 @@ def check_redshift(cfg) -> bool:
             print(f"[Redshift] Connected as {user} to {db}")
             print(f"[Redshift] {version[:80]}...")
 
-            cur.execute(
-                "SELECT tablename FROM pg_tables "
-                "WHERE schemaname = 'crypto' ORDER BY tablename;"
-            )
+            cur.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'crypto' ORDER BY tablename;")
             tables = [row[0] for row in cur.fetchall()]
             if tables:
                 print(f"[Redshift] Tables in 'crypto' schema: {', '.join(tables)}")

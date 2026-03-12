@@ -55,6 +55,7 @@ s3 = boto3.client("s3", region_name=config.aws_region)
 # S3 helpers
 # ---------------------------------------------------------------------------
 
+
 def _upload_parquet(df: pd.DataFrame, s3_key: str):
     table = pa.Table.from_pandas(df, preserve_index=False)
     buf = io.BytesIO()
@@ -67,6 +68,7 @@ def _upload_parquet(df: pd.DataFrame, s3_key: str):
 # ---------------------------------------------------------------------------
 # OHLCV aggregation
 # ---------------------------------------------------------------------------
+
 
 def _compute_candles(df: pd.DataFrame) -> pd.DataFrame:
     """Resample raw trades into 1-minute OHLCV candles per product and exchange."""
@@ -105,9 +107,17 @@ def _compute_candles(df: pd.DataFrame) -> pd.DataFrame:
 
     return candles[
         [
-            "window_start", "window_end", "product_id", "exchange",
-            "open_price", "high_price", "low_price", "close_price",
-            "volume", "trade_count", "vwap",
+            "window_start",
+            "window_end",
+            "product_id",
+            "exchange",
+            "open_price",
+            "high_price",
+            "low_price",
+            "close_price",
+            "volume",
+            "trade_count",
+            "vwap",
         ]
     ]
 
@@ -120,6 +130,7 @@ def _compute_candles(df: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Flush logic — Hive-style partitioned writes to S3
 # ---------------------------------------------------------------------------
+
 
 def flush_buffer(buffer: list[dict]):
     """Write raw trades + candles as Parquet to S3 with Hive partitioning."""
@@ -160,6 +171,7 @@ def flush_buffer(buffer: list[dict]):
 # ---------------------------------------------------------------------------
 # Main consumer loop
 # ---------------------------------------------------------------------------
+
 
 def main():
     from kafka import KafkaConsumer
@@ -203,9 +215,8 @@ def main():
                         buffer.append(row)
 
             elapsed = time.monotonic() - last_flush
-            should_flush = (
-                (len(buffer) >= config.sink_flush_max_records)
-                or (elapsed >= config.sink_flush_interval_sec and buffer)
+            should_flush = (len(buffer) >= config.sink_flush_max_records) or (
+                elapsed >= config.sink_flush_interval_sec and buffer
             )
 
             if should_flush:

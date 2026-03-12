@@ -1,0 +1,23 @@
+# Ruff configuration for crypto-streaming-pipeline
+# https://docs.astral.sh/ruff/configuration/
+
+target-version = "py311"
+line-length = 120
+
+[lint]
+select = ["E", "F", "I", "UP"]
+ignore = [
+    "E402",   # Module level import not at top (intentional: sys.path setup before imports)
+    "E501",   # Line too long (handled by formatter)
+    "F401",   # Unused imports (gradually fix)
+    "F541",   # f-string without placeholders (style)
+    "F841",   # Unused variable in except (common pattern)
+    "I001",   # Import block unsorted (formatter handles)
+    "UP017",  # datetime.UTC alias (py311 compat)
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["F401"]  # Unused imports in tests are common
+
+[format]
+quote-style = "double"

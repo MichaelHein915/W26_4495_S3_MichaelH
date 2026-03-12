@@ -238,8 +238,22 @@ class TestComputeCandles:
     def test_candles_per_exchange(self, s3_sink):
         """Candles are computed per (product_id, exchange)."""
         rows = [
-            {"trade_time": "2026-03-06T12:00:00.000Z", "product_id": "BTC-USD", "price": 65000.0, "size_qty": 0.1, "notional_usd": 6500.0, "exchange": "coinbase"},
-            {"trade_time": "2026-03-06T12:00:00.000Z", "product_id": "BTC-USD", "price": 65010.0, "size_qty": 0.2, "notional_usd": 13002.0, "exchange": "binance"},
+            {
+                "trade_time": "2026-03-06T12:00:00.000Z",
+                "product_id": "BTC-USD",
+                "price": 65000.0,
+                "size_qty": 0.1,
+                "notional_usd": 6500.0,
+                "exchange": "coinbase",
+            },
+            {
+                "trade_time": "2026-03-06T12:00:00.000Z",
+                "product_id": "BTC-USD",
+                "price": 65010.0,
+                "size_qty": 0.2,
+                "notional_usd": 13002.0,
+                "exchange": "binance",
+            },
         ]
         df = pd.DataFrame(rows)
         candles = s3_sink._compute_candles(df)

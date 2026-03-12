@@ -41,9 +41,7 @@ class BinanceProducer(BaseExchange):
         native = [_to_binance(s) for s in self._symbols]
         streams = "/".join(f"{s}@trade" for s in native)
         self._ws_url = f"{self._ws_url}/stream?streams={streams}"
-        self._native_to_unified = {
-            _to_binance(s): s for s in self._symbols
-        }
+        self._native_to_unified = {_to_binance(s): s for s in self._symbols}
 
     def _build_subscribe_payload(self) -> str:
         return ""

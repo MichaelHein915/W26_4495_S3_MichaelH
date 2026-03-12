@@ -1,0 +1,16 @@
+# Kafka → S3 → Redshift sink (requires AWS credentials)
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/ src/
+COPY config/ config/
+COPY Implementation/redshift/ Implementation/redshift/
+
+ENV PYTHONPATH=/app/src
+ENV PYTHONUNBUFFERED=1
+
+CMD ["python", "Implementation/redshift/redshift_sink.py"]

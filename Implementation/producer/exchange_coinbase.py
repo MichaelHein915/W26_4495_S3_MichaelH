@@ -12,11 +12,13 @@ class CoinbaseProducer(BaseExchange):
     name = "coinbase"
 
     def _build_subscribe_payload(self) -> str:
-        return json.dumps({
-            "type": "subscribe",
-            "product_ids": self._symbols,
-            "channels": ["ticker"],
-        })
+        return json.dumps(
+            {
+                "type": "subscribe",
+                "product_ids": self._symbols,
+                "channels": ["ticker"],
+            }
+        )
 
     def _parse_message(self, raw: dict) -> dict | None:
         if raw.get("type") != "ticker" or "price" not in raw:

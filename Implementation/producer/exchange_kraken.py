@@ -36,13 +36,15 @@ class KrakenProducer(BaseExchange):
 
     def _build_subscribe_payload(self) -> str:
         pairs = [_to_kraken(s) for s in self._symbols]
-        return json.dumps({
-            "method": "subscribe",
-            "params": {
-                "channel": "trade",
-                "symbol": pairs,
-            },
-        })
+        return json.dumps(
+            {
+                "method": "subscribe",
+                "params": {
+                    "channel": "trade",
+                    "symbol": pairs,
+                },
+            }
+        )
 
     def _parse_message(self, raw: dict) -> dict | None:
         # Kraken v2 trade messages have channel="trade" and a data array
@@ -55,14 +57,16 @@ class KrakenProducer(BaseExchange):
             unified = _from_kraken(symbol)
             ts = trade.get("timestamp", datetime.now(timezone.utc).isoformat())
 
-            results.append({
-                "exchange": self.name,
-                "product_id": unified,
-                "price": str(trade.get("price", "0")),
-                "size": str(trade.get("qty", "0")),
-                "time": ts,
-                "raw": trade,
-            })
+            results.append(
+                {
+                    "exchange": self.name,
+                    "product_id": unified,
+                    "price": str(trade.get("price", "0")),
+                    "size": str(trade.get("qty", "0")),
+                    "time": ts,
+                    "raw": trade,
+                }
+            )
 
         return results[0] if len(results) == 1 else results if results else None
 

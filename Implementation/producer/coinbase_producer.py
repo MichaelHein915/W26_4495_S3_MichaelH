@@ -26,6 +26,7 @@ producer = KafkaProducer(
     acks="all",  # Ensure data reliability [cite: 71]
 )
 
+
 def on_message(ws, message):
     try:
         data = json.loads(message)
@@ -39,34 +40,31 @@ def on_message(ws, message):
         future = producer.send(config.topic_raw, key=product_id, value=data)
         future.add_errback(_on_send_error)
 
+
 def on_error(ws, error):
     logger.error("WebSocket error: %s", error)
+
 
 def on_close(ws, close_status_code, close_msg):
     logger.warning("Closed connection: %s %s", close_status_code, close_msg)
     producer.flush(10)
 
+
 def on_open(ws):
     logger.info("Connection opened. Subscribing to Coinbase...")
-    subscribe_msg = {
-        "type": "subscribe",
-        "product_ids": config.symbols,
-        "channels": ["ticker"]
-    }
+    subscribe_msg = {"type": "subscribe", "product_ids": config.symbols, "channels": ["ticker"]}
     ws.send(json.dumps(subscribe_msg))
+
 
 def _on_send_error(excp):
     logger.error("Kafka send failed", exc_info=excp)
 
+
 if __name__ == "__main__":
     # Continuous connection with automatic reconnection [cite: 227]
     ws = websocket.WebSocketApp(
-        config.coinbase_ws,
-        on_open=on_open,
-        on_message=on_message,
-        on_error=on_error,
-        on_close=on_close
+        config.coinbase_ws, on_open=on_open, on_message=on_message, on_error=on_error, on_close=on_close
     )
-    
+
     logger.info("Starting Producer for %s...", config.symbols)
     ws.run_forever(reconnect=5)  # Reconnect every 5 seconds if dropped [cite: 227]

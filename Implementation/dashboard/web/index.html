@@ -23,7 +23,6 @@
         <select id="refreshRate" title="Refresh interval">
           <option value="1">1s</option>
           <option value="2" selected>2s</option>
-          <option value="2">2s</option>
           <option value="3">3s</option>
           <option value="5">5s</option>
         </select>
@@ -173,6 +172,38 @@
         <div class="chart-container">
           <h3>Volume Over Time</h3>
           <canvas id="volumeChart"></canvas>
+        </div>
+      </section>
+
+      <section class="section charts">
+        <div class="chart-container">
+          <h3>Price Change Heatmap</h3>
+          <p class="section-desc">% change from window start — green = up, red = down</p>
+          <div class="heatmap-wrap" id="heatmapWrap">
+            <canvas id="heatmapChart"></canvas>
+            <div class="heatmap-legend" id="heatmapLegend"></div>
+          </div>
+        </div>
+        <div class="chart-container">
+          <h3>Symbol Radar</h3>
+          <p class="section-desc">Multi-metric comparison (top 5 by volume)</p>
+          <canvas id="radarChart"></canvas>
+        </div>
+      </section>
+
+      <section class="section charts">
+        <div class="chart-container chart-full">
+          <h3>Market Bubble</h3>
+          <p class="section-desc">Price vs Volume — bubble size = volatility</p>
+          <canvas id="bubbleChart"></canvas>
+        </div>
+      </section>
+
+      <section class="section" id="exchangeVolumeSection">
+        <h3>Volume by Exchange Over Time</h3>
+        <p class="section-desc">Stacked volume across exchanges (multi-exchange only)</p>
+        <div class="chart-container chart-full">
+          <canvas id="stackedVolumeChart"></canvas>
         </div>
       </section>
 

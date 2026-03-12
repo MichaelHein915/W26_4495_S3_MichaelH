@@ -1,0 +1,17 @@
+# Multi-exchange producer image
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install minimal runtime deps (no Java/Spark needed for producer)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/ src/
+COPY config/ config/
+COPY Implementation/producer/ Implementation/producer/
+
+ENV PYTHONPATH=/app/src:/app/Implementation/producer
+ENV PYTHONUNBUFFERED=1
+
+CMD ["python", "Implementation/producer/multi_exchange_producer.py"]

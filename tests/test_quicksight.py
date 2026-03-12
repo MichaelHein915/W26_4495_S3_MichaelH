@@ -108,9 +108,7 @@ class TestCreateDataSource:
 
     def test_idempotent_on_exists(self, qs_mod):
         qs_mod._mock_qs.reset_mock()
-        qs_mod._mock_qs.create_data_source.side_effect = _make_client_error(
-            "ResourceExistsException"
-        )
+        qs_mod._mock_qs.create_data_source.side_effect = _make_client_error("ResourceExistsException")
         qs_mod.create_data_source()
         qs_mod._mock_qs.update_data_source_permissions.assert_not_called()
         qs_mod._mock_qs.create_data_source.side_effect = None
@@ -121,10 +119,7 @@ class TestCreateDatasets:
         qs_mod._mock_qs.reset_mock()
         qs_mod.create_datasets()
         assert qs_mod._mock_qs.create_data_set.call_count == 2
-        ids = [
-            c[1]["DataSetId"]
-            for c in qs_mod._mock_qs.create_data_set.call_args_list
-        ]
+        ids = [c[1]["DataSetId"] for c in qs_mod._mock_qs.create_data_set.call_args_list]
         assert "crypto-raw-trades" in ids
         assert "crypto-candles-1m" in ids
 
@@ -136,9 +131,7 @@ class TestCreateDatasets:
 
     def test_idempotent_on_exists(self, qs_mod):
         qs_mod._mock_qs.reset_mock()
-        qs_mod._mock_qs.create_data_set.side_effect = _make_client_error(
-            "ResourceExistsException"
-        )
+        qs_mod._mock_qs.create_data_set.side_effect = _make_client_error("ResourceExistsException")
         qs_mod.create_datasets()
         qs_mod._mock_qs.update_data_set_permissions.assert_not_called()
         qs_mod._mock_qs.create_data_set.side_effect = None
@@ -160,9 +153,7 @@ class TestCreateAnalysis:
 
     def test_idempotent_on_exists(self, qs_mod):
         qs_mod._mock_qs.reset_mock()
-        qs_mod._mock_qs.create_analysis.side_effect = _make_client_error(
-            "ResourceExistsException"
-        )
+        qs_mod._mock_qs.create_analysis.side_effect = _make_client_error("ResourceExistsException")
         qs_mod.create_analysis()
         qs_mod._mock_qs.update_analysis_permissions.assert_not_called()
         qs_mod._mock_qs.create_analysis.side_effect = None
@@ -173,18 +164,13 @@ class TestTriggerSpiceRefresh:
         qs_mod._mock_qs.reset_mock()
         qs_mod.trigger_spice_refresh()
         assert qs_mod._mock_qs.create_ingestion.call_count == 2
-        ds_ids = [
-            c[1]["DataSetId"]
-            for c in qs_mod._mock_qs.create_ingestion.call_args_list
-        ]
+        ds_ids = [c[1]["DataSetId"] for c in qs_mod._mock_qs.create_ingestion.call_args_list]
         assert "crypto-raw-trades" in ds_ids
         assert "crypto-candles-1m" in ds_ids
 
     def test_handles_already_running(self, qs_mod):
         qs_mod._mock_qs.reset_mock()
-        qs_mod._mock_qs.create_ingestion.side_effect = _make_client_error(
-            "ResourceExistsException"
-        )
+        qs_mod._mock_qs.create_ingestion.side_effect = _make_client_error("ResourceExistsException")
         qs_mod.trigger_spice_refresh()
         assert qs_mod._mock_qs.create_ingestion.call_count == 2
         qs_mod._mock_qs.create_ingestion.side_effect = None

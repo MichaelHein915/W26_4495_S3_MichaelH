@@ -105,7 +105,11 @@ def alert_arbitrage(
     if email_to and smtp_host:
         recipients = [a.strip() for a in email_to.split(",") if a.strip()]
         email_ok = _send_email(
-            smtp_host, smtp_port, smtp_user, smtp_password, smtp_use_tls,
+            smtp_host,
+            smtp_port,
+            smtp_user,
+            smtp_password,
+            smtp_use_tls,
             recipients,
             subject=f"[Crypto Alert] Arbitrage: {product_id} {spread_pct:.2f}%",
             body=text,
@@ -148,7 +152,11 @@ def alert_volume_spike(
     if email_to and smtp_host:
         recipients = [a.strip() for a in email_to.split(",") if a.strip()]
         email_ok = _send_email(
-            smtp_host, smtp_port, smtp_user, smtp_password, smtp_use_tls,
+            smtp_host,
+            smtp_port,
+            smtp_user,
+            smtp_password,
+            smtp_use_tls,
             recipients,
             subject=f"[Crypto Alert] Volume spike: {product_id} {spike_ratio:.1f}x",
             body=text,
@@ -191,7 +199,11 @@ def alert_price_threshold(
     if email_to and smtp_host:
         recipients = [a.strip() for a in email_to.split(",") if a.strip()]
         email_ok = _send_email(
-            smtp_host, smtp_port, smtp_user, smtp_password, smtp_use_tls,
+            smtp_host,
+            smtp_port,
+            smtp_user,
+            smtp_password,
+            smtp_use_tls,
             recipients,
             subject=f"[Crypto Alert] {product_id} ${current_price:,.2f} ({direction_label} ${threshold_price:,.2f})",
             body=text,

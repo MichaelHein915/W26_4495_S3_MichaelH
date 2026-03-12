@@ -51,10 +51,7 @@ DATASET_RAW_ID = "crypto-raw-trades"
 DATASET_CANDLES_ID = "crypto-candles-1m"
 ANALYSIS_ID = "crypto-pipeline-analysis"
 
-QS_USER_ARN = (
-    f"arn:aws:quicksight:{QS_IDENTITY_REGION}:{ACCOUNT_ID}"
-    f":user/default/{config.quicksight_user}"
-)
+QS_USER_ARN = f"arn:aws:quicksight:{QS_IDENTITY_REGION}:{ACCOUNT_ID}:user/default/{config.quicksight_user}"
 
 PRINCIPAL_ARN = QS_USER_ARN
 
@@ -104,9 +101,7 @@ def _grant_permissions(resource_type: str, resource_id: str):
             call(
                 AwsAccountId=ACCOUNT_ID,
                 **{_resource_id_key(resource_type): resource_id},
-                GrantPermissions=[
-                    {"Principal": PRINCIPAL_ARN, "Actions": actions_map[resource_type]}
-                ],
+                GrantPermissions=[{"Principal": PRINCIPAL_ARN, "Actions": actions_map[resource_type]}],
             )
             return
         except ClientError as e:
@@ -133,9 +128,7 @@ def create_data_source():
             DataSourceId=DATASOURCE_ID,
             Name="Crypto Pipeline (Athena)",
             Type="ATHENA",
-            DataSourceParameters={
-                "AthenaParameters": {"WorkGroup": "primary"}
-            },
+            DataSourceParameters={"AthenaParameters": {"WorkGroup": "primary"}},
             SslProperties={"DisableSsl": False},
         )
         _grant_permissions("datasource", DATASOURCE_ID)
@@ -156,17 +149,11 @@ def _build_dataset(dataset_id: str, name: str, table: str, columns: dict):
     physical_table = {
         physical_table_id: {
             "RelationalTable": {
-                "DataSourceArn": (
-                    f"arn:aws:quicksight:{QS_IDENTITY_REGION}:{ACCOUNT_ID}"
-                    f":datasource/{DATASOURCE_ID}"
-                ),
+                "DataSourceArn": (f"arn:aws:quicksight:{QS_IDENTITY_REGION}:{ACCOUNT_ID}:datasource/{DATASOURCE_ID}"),
                 "Catalog": "AwsDataCatalog",
                 "Schema": config.athena_database,
                 "Name": table,
-                "InputColumns": [
-                    {"Name": col, "Type": dtype}
-                    for col, dtype in columns.items()
-                ],
+                "InputColumns": [{"Name": col, "Type": dtype} for col, dtype in columns.items()],
             }
         }
     }
@@ -236,14 +223,8 @@ def create_analysis():
     """Create a QuickSight analysis with starter visuals."""
     print("  Creating analysis ...")
 
-    raw_ds_arn = (
-        f"arn:aws:quicksight:{QS_IDENTITY_REGION}:{ACCOUNT_ID}"
-        f":dataset/{DATASET_RAW_ID}"
-    )
-    candles_ds_arn = (
-        f"arn:aws:quicksight:{QS_IDENTITY_REGION}:{ACCOUNT_ID}"
-        f":dataset/{DATASET_CANDLES_ID}"
-    )
+    raw_ds_arn = f"arn:aws:quicksight:{QS_IDENTITY_REGION}:{ACCOUNT_ID}:dataset/{DATASET_RAW_ID}"
+    candles_ds_arn = f"arn:aws:quicksight:{QS_IDENTITY_REGION}:{ACCOUNT_ID}:dataset/{DATASET_CANDLES_ID}"
 
     definition = {
         "DataSetIdentifierDeclarations": [
@@ -267,7 +248,15 @@ def create_analysis():
                             "Title": {"Visibility": "VISIBLE", "FormatText": {"PlainText": "Total Trades"}},
                             "ChartConfiguration": {
                                 "FieldWells": {
-                                    "Values": [{"NumericalMeasureField": {"FieldId": "trade-count", "Column": {"DataSetIdentifier": "raw_trades", "ColumnName": "price"}, "AggregationFunction": {"SimpleNumericalAggregation": "COUNT"}}}],
+                                    "Values": [
+                                        {
+                                            "NumericalMeasureField": {
+                                                "FieldId": "trade-count",
+                                                "Column": {"DataSetIdentifier": "raw_trades", "ColumnName": "price"},
+                                                "AggregationFunction": {"SimpleNumericalAggregation": "COUNT"},
+                                            }
+                                        }
+                                    ],
                                 },
                             },
                         }
@@ -279,8 +268,29 @@ def create_analysis():
                             "ChartConfiguration": {
                                 "FieldWells": {
                                     "BarChartAggregatedFieldWells": {
-                                        "Category": [{"CategoricalDimensionField": {"FieldId": "symbol", "Column": {"DataSetIdentifier": "candles_1m", "ColumnName": "product_id"}}}],
-                                        "Values": [{"NumericalMeasureField": {"FieldId": "vol", "Column": {"DataSetIdentifier": "candles_1m", "ColumnName": "volume"}, "AggregationFunction": {"SimpleNumericalAggregation": "SUM"}}}],
+                                        "Category": [
+                                            {
+                                                "CategoricalDimensionField": {
+                                                    "FieldId": "symbol",
+                                                    "Column": {
+                                                        "DataSetIdentifier": "candles_1m",
+                                                        "ColumnName": "product_id",
+                                                    },
+                                                }
+                                            }
+                                        ],
+                                        "Values": [
+                                            {
+                                                "NumericalMeasureField": {
+                                                    "FieldId": "vol",
+                                                    "Column": {
+                                                        "DataSetIdentifier": "candles_1m",
+                                                        "ColumnName": "volume",
+                                                    },
+                                                    "AggregationFunction": {"SimpleNumericalAggregation": "SUM"},
+                                                }
+                                            }
+                                        ],
                                     }
                                 },
                             },
@@ -293,9 +303,37 @@ def create_analysis():
                             "ChartConfiguration": {
                                 "FieldWells": {
                                     "LineChartAggregatedFieldWells": {
-                                        "Category": [{"CategoricalDimensionField": {"FieldId": "time", "Column": {"DataSetIdentifier": "candles_1m", "ColumnName": "window_start"}}}],
-                                        "Values": [{"NumericalMeasureField": {"FieldId": "vwap-val", "Column": {"DataSetIdentifier": "candles_1m", "ColumnName": "vwap"}, "AggregationFunction": {"SimpleNumericalAggregation": "AVERAGE"}}}],
-                                        "Colors": [{"CategoricalDimensionField": {"FieldId": "color-sym", "Column": {"DataSetIdentifier": "candles_1m", "ColumnName": "product_id"}}}],
+                                        "Category": [
+                                            {
+                                                "CategoricalDimensionField": {
+                                                    "FieldId": "time",
+                                                    "Column": {
+                                                        "DataSetIdentifier": "candles_1m",
+                                                        "ColumnName": "window_start",
+                                                    },
+                                                }
+                                            }
+                                        ],
+                                        "Values": [
+                                            {
+                                                "NumericalMeasureField": {
+                                                    "FieldId": "vwap-val",
+                                                    "Column": {"DataSetIdentifier": "candles_1m", "ColumnName": "vwap"},
+                                                    "AggregationFunction": {"SimpleNumericalAggregation": "AVERAGE"},
+                                                }
+                                            }
+                                        ],
+                                        "Colors": [
+                                            {
+                                                "CategoricalDimensionField": {
+                                                    "FieldId": "color-sym",
+                                                    "Column": {
+                                                        "DataSetIdentifier": "candles_1m",
+                                                        "ColumnName": "product_id",
+                                                    },
+                                                }
+                                            }
+                                        ],
                                     }
                                 },
                             },

@@ -2,6 +2,7 @@
 Flask API server for the crypto streaming dashboard.
 Consumes Kafka messages in a background thread and exposes REST endpoints.
 """
+
 import json
 import sys
 import threading
@@ -123,10 +124,7 @@ def _poll_and_ingest():
                             "exchange": exchange,
                         }
                     )
-                    if (
-                        _state["last_event_time"] is None
-                        or event_time > _state["last_event_time"]
-                    ):
+                    if _state["last_event_time"] is None or event_time > _state["last_event_time"]:
                         _state["last_event_time"] = event_time
 
                 cutoff = datetime.now(timezone.utc) - timedelta(minutes=MAX_RETENTION_MINUTES)
@@ -169,18 +167,24 @@ def _compute_metrics(events: list) -> list[dict]:
     metrics["vwap_usd"] = metrics["avg_price_usd"]
     has_volume = metrics["total_volume_qty"] > 0
     metrics.loc[has_volume, "vwap_usd"] = (
-        metrics.loc[has_volume, "total_notional_usd"]
-        / metrics.loc[has_volume, "total_volume_qty"]
+        metrics.loc[has_volume, "total_notional_usd"] / metrics.loc[has_volume, "total_volume_qty"]
     )
     metrics["volatility_usd"] = metrics["volatility_usd"].fillna(0.0)
     metrics["price_change_pct"] = (
-        ((metrics["last_price"] - metrics["first_price"]) / metrics["first_price"]) * 100
-    ).round(2).fillna(0.0)
+        (((metrics["last_price"] - metrics["first_price"]) / metrics["first_price"]) * 100).round(2).fillna(0.0)
+    )
     for col in ["avg_price_usd", "vwap_usd", "volatility_usd", "total_volume_qty"]:
         metrics[col] = metrics[col].round(4 if col == "total_volume_qty" else 2)
     return metrics[
-        ["product_id", "trade_count", "avg_price_usd", "vwap_usd",
-         "volatility_usd", "total_volume_qty", "price_change_pct"]
+        [
+            "product_id",
+            "trade_count",
+            "avg_price_usd",
+            "vwap_usd",
+            "volatility_usd",
+            "total_volume_qty",
+            "price_change_pct",
+        ]
     ].to_dict(orient="records")
 
 
@@ -191,9 +195,7 @@ def _normalize_symbol_base(product_id: str) -> str:
     return product_id.upper()
 
 
-def _compute_arbitrage_opportunities(
-    events: list, threshold_pct: float = 0.3
-) -> list[dict]:
+def _compute_arbitrage_opportunities(events: list, threshold_pct: float = 0.3) -> list[dict]:
     """
     Detect cross-exchange price differences. Returns opportunities where
     spread between cheapest and most expensive exchange exceeds threshold.
@@ -250,13 +252,10 @@ def _compute_exchange_metrics(events: list) -> list[dict]:
     if "exchange" not in df.columns:
         df["exchange"] = "coinbase"
     df["exchange"] = df["exchange"].fillna("coinbase")
-    agg = (
-        df.groupby(["product_id", "exchange"], as_index=False)
-        .agg(
-            avg_price_usd=("price_usd", "mean"),
-            trade_count=("price_usd", "count"),
-            total_volume_qty=("size_qty", "sum"),
-        )
+    agg = df.groupby(["product_id", "exchange"], as_index=False).agg(
+        avg_price_usd=("price_usd", "mean"),
+        trade_count=("price_usd", "count"),
+        total_volume_qty=("size_qty", "sum"),
     )
     for col in ["avg_price_usd", "total_volume_qty"]:
         agg[col] = agg[col].round(4 if col == "total_volume_qty" else 2)
@@ -269,16 +268,62 @@ def _compute_volume_timeseries(events: list) -> list[dict]:
         return []
     df = pd.DataFrame(events)
     df["event_time"] = pd.to_datetime(df["event_time"], utc=True)
-    ts = (
-        df.set_index("event_time")
-        .resample("30s")
-        .agg(total_volume_qty=("size_qty", "sum"))
-        .reset_index()
-        .dropna()
-    )
+    ts = df.set_index("event_time").resample("30s").agg(total_volume_qty=("size_qty", "sum")).reset_index().dropna()
     ts["event_time"] = ts["event_time"].dt.strftime("%Y-%m-%dT%H:%M:%S")
     ts["total_volume_qty"] = ts["total_volume_qty"].round(4)
     return ts.to_dict(orient="records")
+
+
+def _compute_volume_by_exchange_timeseries(events: list) -> list[dict]:
+    """Volume per 30s bucket per exchange for stacked area chart."""
+    if not events:
+        return []
+    df = pd.DataFrame(events)
+    if "exchange" not in df.columns:
+        df["exchange"] = "coinbase"
+    df["exchange"] = df["exchange"].fillna("coinbase")
+    df["event_time"] = pd.to_datetime(df["event_time"], utc=True)
+    ts = (
+        df.set_index("event_time")
+        .groupby("exchange")
+        .resample("30s", include_groups=False)
+        .agg(volume=("size_qty", "sum"))
+        .reset_index()
+    )
+    ts["event_time"] = ts["event_time"].dt.strftime("%Y-%m-%dT%H:%M:%S")
+    ts["volume"] = ts["volume"].round(4)
+    return ts.to_dict(orient="records")
+
+
+def _compute_heatmap_data(events: list) -> dict:
+    """Price change % by symbol x time bucket for heatmap. Returns {labels, times, matrix}."""
+    if not events:
+        return {"labels": [], "times": [], "matrix": []}
+    df = pd.DataFrame(events)
+    df["event_time"] = pd.to_datetime(df["event_time"], utc=True)
+    df["bucket"] = df["event_time"].dt.floor("30s")
+    agg = df.groupby(["product_id", "bucket"], as_index=False).agg(avg_price=("price_usd", "mean"))
+    if agg.empty:
+        return {"labels": [], "times": [], "matrix": []}
+    buckets = sorted(agg["bucket"].unique())[-20:]
+    labels = sorted(agg["product_id"].unique())
+    matrix = []
+    for pid in labels:
+        row = []
+        for b in buckets:
+            v = agg[(agg["product_id"] == pid) & (agg["bucket"] == b)]["avg_price"]
+            row.append(float(v.iloc[0]) if len(v) > 0 else None)
+        first = next((v for v in row if v is not None), None)
+        pct_row = [
+            round(((v - first) / first * 100), 2) if first and v is not None else None
+            for v in row
+        ]
+        matrix.append(pct_row)
+    return {
+        "labels": labels,
+        "times": [b.strftime("%H:%M") for b in buckets],
+        "matrix": matrix,
+    }
 
 
 def _get_recent_trades(events: list, limit: int = 20) -> list[dict]:
@@ -290,13 +335,15 @@ def _get_recent_trades(events: list, limit: int = 20) -> list[dict]:
     for e in sorted_events[:limit]:
         t = e["event_time"]
         time_str = t.strftime("%H:%M:%S") if hasattr(t, "strftime") else str(t)[:19]
-        out.append({
-            "product_id": e["product_id"],
-            "price_usd": round(float(e["price_usd"]), 2),
-            "size_qty": round(float(e.get("size_qty", 0)), 4),
-            "exchange": e.get("exchange", "coinbase"),
-            "event_time": time_str,
-        })
+        out.append(
+            {
+                "product_id": e["product_id"],
+                "price_usd": round(float(e["price_usd"]), 2),
+                "size_qty": round(float(e.get("size_qty", 0)), 4),
+                "exchange": e.get("exchange", "coinbase"),
+                "event_time": time_str,
+            }
+        )
     return out
 
 
@@ -385,8 +432,6 @@ def _compute_timeseries(events: list) -> list[dict]:
     ts = ts.dropna(subset=["avg_price_usd"])
     ts["event_time"] = ts["event_time"].dt.strftime("%Y-%m-%dT%H:%M:%S")
     return ts.to_dict(orient="records")
-
-
 
 
 @app.route("/")
@@ -481,9 +526,7 @@ def _compute_volume_spikes(
     return alerts, volume_history
 
 
-def _build_dashboard_payload(
-    window_minutes: int, exchange_filter: str
-) -> dict:
+def _build_dashboard_payload(window_minutes: int, exchange_filter: str) -> dict:
     """Build full dashboard payload for given window and exchange filter."""
     events, meta = _get_events()
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
@@ -492,9 +535,7 @@ def _build_dashboard_payload(
         events = [e for e in events if e.get("exchange", "coinbase").lower() == exchange_filter]
 
     config = get_config()
-    arbitrage = _compute_arbitrage_opportunities(
-        events, threshold_pct=config.alert_arbitrage_threshold_pct
-    )
+    arbitrage = _compute_arbitrage_opportunities(events, threshold_pct=config.alert_arbitrage_threshold_pct)
     for opp in arbitrage:
         alert_arbitrage(
             config.slack_webhook_url,
@@ -518,13 +559,11 @@ def _build_dashboard_payload(
     exchange_stats = _compute_exchange_stats(events)
     exchange_metrics = _compute_exchange_metrics(events)
     volume_timeseries = _compute_volume_timeseries(events)
+    volume_by_exchange_ts = _compute_volume_by_exchange_timeseries(events)
+    heatmap_data = _compute_heatmap_data(events)
     recent_trades = _get_recent_trades(events, limit=25)
-    volume_history = {
-        k: deque(v, maxlen=30) for k, v in meta.get("volume_history", {}).items()
-    }
-    alerts, volume_history = _compute_volume_spikes(
-        metrics, volume_history, threshold=config.alert_volume_spike_ratio
-    )
+    volume_history = {k: deque(v, maxlen=30) for k, v in meta.get("volume_history", {}).items()}
+    alerts, volume_history = _compute_volume_spikes(metrics, volume_history, threshold=config.alert_volume_spike_ratio)
     for a in alerts:
         alert_volume_spike(
             config.slack_webhook_url,
@@ -614,6 +653,8 @@ def _build_dashboard_payload(
         "exchange_stats": exchange_stats,
         "exchange_metrics": exchange_metrics,
         "volume_timeseries": volume_timeseries,
+        "volume_by_exchange_ts": volume_by_exchange_ts,
+        "heatmap_data": heatmap_data,
         "recent_trades": recent_trades,
         "status": {
             "kafka_status": kafka_status,

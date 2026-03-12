@@ -17,10 +17,12 @@ sys.path.insert(0, str(REPO_ROOT / "Implementation" / "producer"))
 
 # ── Coinbase ─────────────────────────────────────────────────────────
 
+
 class TestCoinbaseProducer:
     @pytest.fixture(autouse=True)
     def _setup(self):
         from exchange_coinbase import CoinbaseProducer
+
         self.producer = CoinbaseProducer(
             kafka_producer=MagicMock(),
             topic="test-topic",
@@ -65,14 +67,17 @@ class TestCoinbaseProducer:
 
 # ── Binance ──────────────────────────────────────────────────────────
 
+
 class TestBinanceSymbolConversion:
     def test_to_binance(self):
         from exchange_binance import _to_binance
+
         assert _to_binance("BTC-USD") == "btcusdt"
         assert _to_binance("ETH-USDT") == "ethusdt"
 
     def test_to_unified(self):
         from exchange_binance import _to_unified
+
         assert _to_unified("BTCUSDT") == "BTC-USDT"
         assert _to_unified("ETHUSDT") == "ETH-USDT"
         assert _to_unified("SOLUSD") == "SOL-USD"
@@ -82,6 +87,7 @@ class TestBinanceProducer:
     @pytest.fixture(autouse=True)
     def _setup(self):
         from exchange_binance import BinanceProducer
+
         self.producer = BinanceProducer(
             kafka_producer=MagicMock(),
             topic="test-topic",
@@ -134,15 +140,18 @@ class TestBinanceProducer:
 
 # ── Kraken ───────────────────────────────────────────────────────────
 
+
 class TestKrakenSymbolConversion:
     def test_to_kraken(self):
         from exchange_kraken import _to_kraken
+
         assert _to_kraken("BTC-USD") == "XBT/USD"
         assert _to_kraken("ETH-USD") == "ETH/USD"
         assert _to_kraken("DOGE-USD") == "XDG/USD"
 
     def test_from_kraken(self):
         from exchange_kraken import _from_kraken
+
         assert _from_kraken("XBT/USD") == "BTC-USD"
         assert _from_kraken("ETH/USD") == "ETH-USD"
         assert _from_kraken("XDG/USD") == "DOGE-USD"
@@ -152,6 +161,7 @@ class TestKrakenProducer:
     @pytest.fixture(autouse=True)
     def _setup(self):
         from exchange_kraken import KrakenProducer
+
         self.producer = KrakenProducer(
             kafka_producer=MagicMock(),
             topic="test-topic",
@@ -210,11 +220,13 @@ class TestKrakenProducer:
 
 # ── BaseExchange ─────────────────────────────────────────────────────
 
+
 class TestBaseExchangeOnMessage:
     """Test that _on_message publishes normalised data to Kafka."""
 
     def test_publishes_to_kafka(self):
         from exchange_coinbase import CoinbaseProducer
+
         mock_kafka = MagicMock()
         producer = CoinbaseProducer(
             kafka_producer=mock_kafka,
@@ -222,13 +234,15 @@ class TestBaseExchangeOnMessage:
             symbols=["BTC-USD"],
             ws_url="wss://fake",
         )
-        msg = json.dumps({
-            "type": "ticker",
-            "product_id": "BTC-USD",
-            "price": "65000",
-            "last_size": "0.001",
-            "time": "2026-03-06T12:00:00Z",
-        })
+        msg = json.dumps(
+            {
+                "type": "ticker",
+                "product_id": "BTC-USD",
+                "price": "65000",
+                "last_size": "0.001",
+                "time": "2026-03-06T12:00:00Z",
+            }
+        )
         producer._on_message(None, msg)
         mock_kafka.send.assert_called_once()
         args, kwargs = mock_kafka.send.call_args
@@ -238,6 +252,7 @@ class TestBaseExchangeOnMessage:
 
     def test_skips_malformed_json(self):
         from exchange_coinbase import CoinbaseProducer
+
         mock_kafka = MagicMock()
         producer = CoinbaseProducer(
             kafka_producer=mock_kafka,
@@ -251,10 +266,12 @@ class TestBaseExchangeOnMessage:
 
 # ── Exchange stats in API ────────────────────────────────────────────
 
+
 class TestComputeExchangeStats:
     @pytest.fixture(scope="class")
     def api(self):
         from unittest.mock import patch
+
         mock_cfg = MagicMock()
         mock_cfg.kafka_server = "localhost:9092"
         mock_cfg.topic_raw = "test"
@@ -262,6 +279,7 @@ class TestComputeExchangeStats:
         with patch("utils.config.get_config", return_value=mock_cfg):
             import importlib
             import Implementation.dashboard.api_server as mod
+
             importlib.reload(mod)
         return mod
 
@@ -272,7 +290,13 @@ class TestComputeExchangeStats:
 
     def test_single_exchange(self, api):
         events = [
-            {"exchange": "coinbase", "product_id": "BTC-USD", "price_usd": 65000, "size_qty": 0.1, "notional_usd": 6500},
+            {
+                "exchange": "coinbase",
+                "product_id": "BTC-USD",
+                "price_usd": 65000,
+                "size_qty": 0.1,
+                "notional_usd": 6500,
+            },
             {"exchange": "coinbase", "product_id": "ETH-USD", "price_usd": 3500, "size_qty": 1.0, "notional_usd": 3500},
         ]
         result = api._compute_exchange_stats(events)
@@ -282,10 +306,28 @@ class TestComputeExchangeStats:
 
     def test_multiple_exchanges(self, api):
         events = [
-            {"exchange": "coinbase", "product_id": "BTC-USD", "price_usd": 65000, "size_qty": 0.1, "notional_usd": 6500},
-            {"exchange": "binance", "product_id": "BTC-USDT", "price_usd": 65010, "size_qty": 0.2, "notional_usd": 13002},
+            {
+                "exchange": "coinbase",
+                "product_id": "BTC-USD",
+                "price_usd": 65000,
+                "size_qty": 0.1,
+                "notional_usd": 6500,
+            },
+            {
+                "exchange": "binance",
+                "product_id": "BTC-USDT",
+                "price_usd": 65010,
+                "size_qty": 0.2,
+                "notional_usd": 13002,
+            },
             {"exchange": "binance", "product_id": "ETH-USDT", "price_usd": 3500, "size_qty": 1.0, "notional_usd": 3500},
-            {"exchange": "kraken", "product_id": "BTC-USD", "price_usd": 64990, "size_qty": 0.05, "notional_usd": 3249.5},
+            {
+                "exchange": "kraken",
+                "product_id": "BTC-USD",
+                "price_usd": 64990,
+                "size_qty": 0.05,
+                "notional_usd": 3249.5,
+            },
         ]
         result = api._compute_exchange_stats(events)
         assert sorted(result["exchanges"]) == ["binance", "coinbase", "kraken"]

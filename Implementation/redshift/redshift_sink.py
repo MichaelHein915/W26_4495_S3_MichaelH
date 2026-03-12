@@ -62,6 +62,7 @@ s3 = boto3.client("s3", region_name=config.aws_region)
 # Redshift helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_conn():
     return redshift_connector.connect(
         host=config.redshift_host,
@@ -74,9 +75,7 @@ def _get_conn():
 
 def _copy_from_s3(cursor, table: str, s3_key: str):
     sql = (
-        f"COPY {table} FROM 's3://{config.s3_bucket}/{s3_key}' "
-        f"IAM_ROLE '{config.redshift_iam_role}' "
-        "FORMAT AS PARQUET;"
+        f"COPY {table} FROM 's3://{config.s3_bucket}/{s3_key}' IAM_ROLE '{config.redshift_iam_role}' FORMAT AS PARQUET;"
     )
     cursor.execute(sql)
 
@@ -84,6 +83,7 @@ def _copy_from_s3(cursor, table: str, s3_key: str):
 # ---------------------------------------------------------------------------
 # S3 helpers
 # ---------------------------------------------------------------------------
+
 
 def _upload_parquet(df: pd.DataFrame, s3_key: str):
     table = pa.Table.from_pandas(df, preserve_index=False)
@@ -97,6 +97,7 @@ def _upload_parquet(df: pd.DataFrame, s3_key: str):
 # ---------------------------------------------------------------------------
 # OHLCV aggregation
 # ---------------------------------------------------------------------------
+
 
 def _compute_candles(df: pd.DataFrame) -> pd.DataFrame:
     """Resample raw trades into 1-minute OHLCV candles per product and exchange."""
@@ -140,9 +141,17 @@ def _compute_candles(df: pd.DataFrame) -> pd.DataFrame:
     candles = candles[candles["trade_count"] > 0]
     return candles[
         [
-            "window_start", "window_end", "product_id", "exchange",
-            "open_price", "high_price", "low_price", "close_price",
-            "volume", "trade_count", "vwap",
+            "window_start",
+            "window_end",
+            "product_id",
+            "exchange",
+            "open_price",
+            "high_price",
+            "low_price",
+            "close_price",
+            "volume",
+            "trade_count",
+            "vwap",
         ]
     ]
 
@@ -155,6 +164,7 @@ def _compute_candles(df: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Flush logic
 # ---------------------------------------------------------------------------
+
 
 def flush_buffer(buffer: list[dict]):
     """Write raw trades + candles to S3 then COPY into Redshift."""
@@ -206,6 +216,7 @@ def flush_buffer(buffer: list[dict]):
 # Main consumer loop
 # ---------------------------------------------------------------------------
 
+
 def main():
     from kafka import KafkaConsumer
 
@@ -247,9 +258,8 @@ def main():
                         buffer.append(row)
 
             elapsed = time.monotonic() - last_flush
-            should_flush = (
-                (len(buffer) >= config.sink_flush_max_records)
-                or (elapsed >= config.sink_flush_interval_sec and buffer)
+            should_flush = (len(buffer) >= config.sink_flush_max_records) or (
+                elapsed >= config.sink_flush_interval_sec and buffer
             )
 
             if should_flush:

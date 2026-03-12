@@ -1,0 +1,16 @@
+# Kafka → S3 Parquet sink for Athena (requires S3_BUCKET)
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/ src/
+COPY config/ config/
+COPY Implementation/athena/ Implementation/athena/
+
+ENV PYTHONPATH=/app/src
+ENV PYTHONUNBUFFERED=1
+
+CMD ["python", "Implementation/athena/s3_sink.py"]

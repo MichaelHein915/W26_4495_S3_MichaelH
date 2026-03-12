@@ -7,6 +7,10 @@ let modalChart = null;
 let volatilityChart = null;
 let volumeChart = null;
 let exchangeChart = null;
+let heatmapChart = null;
+let radarChart = null;
+let bubbleChart = null;
+let stackedVolumeChart = null;
 let refreshTimer = null;
 let metricsCache = [];
 let tableSortKey = 'product_id';
@@ -77,7 +81,7 @@ function applyTheme(theme) {
   }
   localStorage.setItem('theme', theme);
 
-  [barChart, lineChart, donutChart, volatilityChart, volumeChart, exchangeChart].forEach((c) => {
+  [barChart, lineChart, donutChart, volatilityChart, volumeChart, exchangeChart, radarChart, bubbleChart, stackedVolumeChart].forEach((c) => {
     if (!c) return;
     const txtColor = theme === 'light' ? '#656d76' : '#8b949e';
     const gridColor = theme === 'light' ? 'rgba(0,0,0,0.08)' : 'rgba(48,54,61,0.3)';
@@ -665,6 +669,243 @@ function updateExchangeChart(exchangeMetrics) {
   exchangeChart.update();
 }
 
+function updateHeatmap(heatmapData) {
+  const wrap = el('heatmapWrap');
+  const canvas = el('heatmapChart');
+  const legendEl = el('heatmapLegend');
+  if (!canvas || !heatmapData?.labels?.length || !heatmapData?.matrix?.length) {
+    if (wrap) wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = 'block';
+  const { labels, times, matrix } = heatmapData;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const w = rect.width;
+  const h = rect.height;
+  const cellW = Math.max(20, (w - 80) / times.length);
+  const cellH = Math.max(12, (h - 40) / labels.length);
+  const labelW = 70;
+  const labelH = 20;
+  const allVals = matrix.flat().filter((v) => v != null);
+  const minVal = allVals.length ? Math.min(...allVals) : 0;
+  const maxVal = allVals.length ? Math.max(...allVals) : 0;
+  const range = Math.max(Math.abs(minVal), Math.abs(maxVal), 0.01);
+
+  function colorFor(val) {
+    if (val == null) return 'rgba(128,128,128,0.3)';
+    const t = (val + range) / (2 * range);
+    if (t >= 0.5) {
+      const g = Math.round(63 + (1 - t) * 2 * 192);
+      return `rgb(63, ${g}, 80)`;
+    }
+    const r = Math.round(248 - t * 2 * 167);
+    return `rgb(${r}, 81, 73)`;
+  }
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = getThemeColors().text;
+  labels.forEach((lbl, i) => {
+    ctx.fillText(lbl, labelW - 4, labelH + i * cellH + cellH / 2 + 4);
+  });
+  ctx.textAlign = 'center';
+  times.forEach((t, i) => {
+    ctx.fillText(t, labelW + i * cellW + cellW / 2, labelH - 4);
+  });
+  matrix.forEach((row, ri) => {
+    row.forEach((val, ci) => {
+      ctx.fillStyle = colorFor(val);
+      ctx.fillRect(labelW + ci * cellW + 1, labelH + ri * cellH + 1, cellW - 2, cellH - 2);
+      if (val != null && cellW > 24) {
+        ctx.fillStyle = document.documentElement.getAttribute('data-theme') === 'light' ? '#1f2328' : '#e6edf3';
+        ctx.font = '9px sans-serif';
+        ctx.fillText(val.toFixed(1) + '%', labelW + ci * cellW + cellW / 2, labelH + ri * cellH + cellH / 2 + 3);
+      }
+    });
+  });
+  if (legendEl) {
+    legendEl.innerHTML = `<span style="color:#3fb950">▲ +${range.toFixed(1)}%</span> &nbsp; <span style="color:#f85149">▼ -${range.toFixed(1)}%</span>`;
+  }
+}
+
+function updateRadarChart(metrics) {
+  const ctx = el('radarChart')?.getContext('2d');
+  const tc = getThemeColors();
+  const top = (metrics || []).sort((a, b) => b.total_volume_qty - a.total_volume_qty).slice(0, 5);
+  if (!top.length || !ctx) {
+    if (radarChart) { radarChart.data.datasets = []; radarChart.update(); }
+    return;
+  }
+  const maxPrice = Math.max(...top.map((m) => m.avg_price_usd), 1);
+  const maxVol = Math.max(...top.map((m) => m.total_volume_qty), 1);
+  const maxVolatility = Math.max(...top.map((m) => m.volatility_usd), 1);
+  const maxTrades = Math.max(...top.map((m) => m.trade_count), 1);
+  const maxChange = Math.max(...top.map((m) => Math.abs(m.price_change_pct)), 1);
+
+  const datasets = top.map((m, i) => ({
+    label: m.product_id,
+    data: [
+      (m.avg_price_usd / maxPrice) * 100,
+      (m.total_volume_qty / maxVol) * 100,
+      (m.volatility_usd / maxVolatility) * 100,
+      (m.trade_count / maxTrades) * 100,
+      (Math.abs(m.price_change_pct) / maxChange) * 100,
+    ],
+    borderColor: CHART_COLORS[i % CHART_COLORS.length],
+    backgroundColor: CHART_COLORS[i % CHART_COLORS.length].replace(')', ', 0.2)').replace('rgb', 'rgba'),
+    pointBackgroundColor: CHART_COLORS[i % CHART_COLORS.length],
+    pointBorderColor: '#fff',
+    pointHoverBackgroundColor: '#fff',
+  }));
+
+  if (!radarChart) {
+    radarChart = new Chart(ctx, {
+      type: 'radar',
+      data: {
+        labels: ['Price', 'Volume', 'Volatility', 'Trades', '|Change|'],
+        datasets,
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: { legend: { labels: { color: tc.text } } },
+        scales: {
+          r: { ticks: { color: tc.text }, grid: { color: tc.grid }, pointLabels: { color: tc.text } },
+        },
+      },
+    });
+  } else {
+    radarChart.data.datasets = datasets;
+  }
+  radarChart.update();
+}
+
+function updateBubbleChart(metrics) {
+  const ctx = el('bubbleChart')?.getContext('2d');
+  const tc = getThemeColors();
+  if (!metrics?.length || !ctx) {
+    if (bubbleChart) { bubbleChart.data.datasets = []; bubbleChart.update(); }
+    return;
+  }
+  const maxVol = Math.max(...metrics.map((m) => m.total_volume_qty), 1);
+  const maxVolatility = Math.max(...metrics.map((m) => m.volatility_usd), 1);
+  const data = metrics.map((m, i) => ({
+    x: m.avg_price_usd,
+    y: m.total_volume_qty,
+    r: Math.max(8, Math.min(35, (m.volatility_usd / maxVolatility) * 30)),
+    product_id: m.product_id,
+  }));
+
+  if (!bubbleChart) {
+    bubbleChart = new Chart(ctx, {
+      type: 'bubble',
+      data: {
+        datasets: [{
+          label: 'Symbols',
+          data,
+          backgroundColor: metrics.map((m) =>
+            (m.price_change_pct >= 0 ? 'rgba(63, 185, 80, 0.6)' : 'rgba(248, 81, 73, 0.6)')
+          ),
+          borderColor: metrics.map((m) => (m.price_change_pct >= 0 ? '#3fb950' : '#f85149')),
+          borderWidth: 1,
+        }],
+      },
+      options: {
+        onClick: (evt, elements) => {
+          if (elements.length && data[elements[0].index]?.product_id) {
+            openModal(data[elements[0].index].product_id);
+          }
+        },
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (c) => {
+                const d = c.raw;
+                const m = metrics.find((x) => x.product_id === d.product_id);
+                return d.product_id ? [`${d.product_id}`, `Price: $${d.x.toLocaleString()}`, `Vol: ${fmtVol(d.y)}`, `Volatility: $${m?.volatility_usd?.toFixed(2) ?? '-'}`] : [];
+              },
+            },
+            backgroundColor: tc.tooltipBg, titleColor: tc.tooltipTitle, bodyColor: tc.tooltipBody, borderColor: tc.tooltipBorder, borderWidth: 1,
+          },
+        },
+        scales: {
+          x: { title: { display: true, text: 'Avg Price (USD)', color: tc.text }, ticks: { color: tc.text }, grid: { color: tc.grid } },
+          y: { title: { display: true, text: 'Volume', color: tc.text }, ticks: { color: tc.text }, grid: { color: tc.grid } },
+        },
+      },
+    });
+  } else {
+    bubbleChart.data.datasets[0].data = data;
+    bubbleChart.data.datasets[0].backgroundColor = metrics.map((m) =>
+      (m.price_change_pct >= 0 ? 'rgba(63, 185, 80, 0.6)' : 'rgba(248, 81, 73, 0.6)')
+    );
+    bubbleChart.data.datasets[0].borderColor = metrics.map((m) => (m.price_change_pct >= 0 ? '#3fb950' : '#f85149'));
+  }
+  bubbleChart.update();
+}
+
+function updateStackedVolumeChart(volumeByExchangeTs) {
+  const ctx = el('stackedVolumeChart')?.getContext('2d');
+  const tc = getThemeColors();
+  const section = el('exchangeVolumeSection');
+  if (!volumeByExchangeTs?.length || !ctx) {
+    if (section) section.style.display = 'none';
+    return;
+  }
+  const byTime = {};
+  const exchanges = new Set();
+  volumeByExchangeTs.forEach((r) => {
+    exchanges.add(r.exchange);
+    (byTime[r.event_time] ??= {})[r.exchange] = r.volume;
+  });
+  const labels = Object.keys(byTime).sort();
+  const exchangesList = [...exchanges].sort();
+  if (exchangesList.length < 2) {
+    if (section) section.style.display = 'none';
+    return;
+  }
+  if (section) section.style.display = 'block';
+  const datasets = exchangesList.map((ex, i) => ({
+    label: ex,
+    data: labels.map((t) => byTime[t]?.[ex] ?? 0),
+    backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
+    borderColor: CHART_COLORS[i % CHART_COLORS.length],
+    fill: true,
+    tension: 0.3,
+    pointRadius: 0,
+  }));
+
+  if (!stackedVolumeChart) {
+    stackedVolumeChart = new Chart(ctx, {
+      type: 'line',
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { labels: { color: tc.text } } },
+        scales: {
+          x: { stacked: true, ticks: { color: tc.text, maxTicksLimit: 8 }, grid: { color: tc.grid } },
+          y: { stacked: true, ticks: { color: tc.text }, grid: { color: tc.grid } },
+        },
+      },
+    });
+  } else {
+    stackedVolumeChart.data.labels = labels;
+    stackedVolumeChart.data.datasets = datasets;
+  }
+  stackedVolumeChart.update();
+}
+
 function updateDonutChart(metrics) {
   const ctx = el('donutChart').getContext('2d');
   const tc = getThemeColors();
@@ -992,6 +1233,10 @@ async function refresh() {
   updateVolumeChart(data.volume_timeseries);
   updateExchangeChart(data.exchange_metrics);
   updateLineChart(data.timeseries);
+  updateHeatmap(data.heatmap_data);
+  updateRadarChart(data.metrics);
+  updateBubbleChart(data.metrics);
+  updateStackedVolumeChart(data.volume_by_exchange_ts);
 }
 
 function startPolling() {

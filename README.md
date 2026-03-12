@@ -132,6 +132,41 @@ You should see both `zookeeper` and `kafka` running. Wait a few seconds for Kafk
 
 ## Running the Pipeline
 
+You can run the pipeline in two ways: **Docker Compose** (all-in-one) or **manually** (separate terminals).
+
+### Option A: Full Pipeline with Docker Compose (Recommended)
+
+Run the entire pipeline (Kafka, producer, consumer, dashboard) with one command:
+
+```bash
+docker compose up --build
+```
+
+Optional: copy `config/env.example` to `.env` to customize symbols, exchanges, or alerts.
+
+This starts:
+
+- **Zookeeper** and **Kafka** — message broker
+- **Producer** — multi-exchange (Coinbase, Binance, Kraken) WebSocket → Kafka
+- **Consumer** — PySpark streaming aggregations (console output)
+- **Dashboard** — Flask API + UI at **http://localhost:5000**
+
+To run in the background:
+
+```bash
+docker compose up -d --build
+```
+
+To include the optional AWS sinks (S3/Athena, Redshift), ensure `.env` has the required AWS variables, then:
+
+```bash
+docker compose --profile aws up -d --build
+```
+
+**Note:** For local development (running producer/dashboard outside Docker), use `KAFKA_BOOTSTRAP_SERVERS=localhost:9092` in your `.env`. The Kafka container exposes port 9092 for host access.
+
+### Option B: Manual (Separate Terminals)
+
 The pipeline has three layers that should be started in order. Open a separate terminal for each component.
 
 ### Step 1 — Start the Kafka Producer
@@ -317,7 +352,12 @@ docker compose down
 
 ```
 cryto-streaming-pipeline/
-├── docker-compose.yml              # Kafka + ZooKeeper containers
+├── docker-compose.yml              # Full pipeline: Kafka, producer, consumer, dashboard (+ optional AWS sinks)
+├── Dockerfile.producer             # Multi-exchange producer image
+├── Dockerfile.consumer              # PySpark consumer image
+├── Dockerfile.dashboard             # Flask dashboard image
+├── Dockerfile.s3-sink               # S3/Athena sink image
+├── Dockerfile.redshift-sink         # Redshift sink image
 ├── requirements.txt                # Python dependencies
 ├── .env                            # Environment configuration (not committed)
 ├── config/
@@ -377,3 +417,5 @@ cryto-streaming-pipeline/
 | QuickSight `AccessDeniedException` | Ensure QuickSight has permission to access your S3 bucket and Athena (QuickSight console → Manage QuickSight → Security & permissions) |
 | QuickSight datasets show 0 rows | Trigger a SPICE refresh: re-run `setup_quicksight.py` or refresh manually in the Datasets page |
 | Redshift/Athena: `exchange` column missing | For existing deployments, run `ALTER TABLE crypto.raw_trades ADD COLUMN exchange VARCHAR(20) DEFAULT 'coinbase';` and same for `crypto.candles_1m`. See `Implementation/redshift/schema.sql` for migration notes |
+| Docker: producer/consumer can't connect to Kafka | Wait for Kafka healthcheck to pass (~30s). Check `docker compose ps` — Kafka must show "healthy" before dependent services start |
+| Docker: consumer OOM or slow startup | PySpark downloads JARs on first run. Increase Docker memory (Docker Desktop → Settings → Resources) or wait a few minutes |
