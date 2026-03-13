@@ -111,6 +111,8 @@ The default `.env` values work out of the box for local development:
 | `ALERT_ARBITRAGE_THRESHOLD_PCT` | `0.3` | Min spread % to trigger arbitrage alert |
 | `ALERT_VOLUME_SPIKE_RATIO` | `2.0` | Volume spike ratio to trigger alert |
 | `ALERT_PRICE_THRESHOLDS` | — | Price alerts: `SYMBOL:above|below:PRICE` (comma-separated, e.g. `BTC-USD:above:100000,ETH-USD:below:3000`) |
+| `ALERT_ANOMALY_ENABLED` | `true` | Enable ML anomaly detection (Isolation Forest) |
+| `ANOMALY_CONTAMINATION` | `0.05` | Expected proportion of anomalies (0.01–0.1) |
 
 For AWS sinks, see the [AWS Data Sinks](#aws-data-sinks-optional) section below.
 
@@ -234,8 +236,9 @@ Features:
 - Real-time price trend line chart (30-second buckets)
 - Volume spike alerts
 - **Price threshold alerts** — Slack/email when a symbol crosses above or below a configured price
+- **ML anomaly detection** — Isolation Forest detects unusual patterns in trade count, volatility, volume, and price change
 - **Cross-exchange arbitrage detection** — highlights price spreads between exchanges
-- **Configurable alerts** — Slack and/or email for arbitrage, volume spikes, and price thresholds
+- **Configurable alerts** — Slack and/or email for arbitrage, volume spikes, price thresholds, and anomalies
 - **Exchange filter** — filter metrics by Coinbase, Binance, or Kraken (dropdown + clickable pills)
 - KPI cards (total trades, live symbols, total volume, live exchanges, data freshness)
 - Exchange pills showing trade counts per exchange (click to filter)

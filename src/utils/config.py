@@ -54,6 +54,8 @@ class AppConfig:
     alert_arbitrage_threshold_pct: float = 0.3
     alert_volume_spike_ratio: float = 2.0
     alert_price_thresholds: list[tuple[str, str, float]] = field(default_factory=list)
+    alert_anomaly_enabled: bool = True
+    anomaly_contamination: float = 0.05
 
 
 def _parse_symbols(raw: str) -> list[str]:
@@ -114,4 +116,6 @@ def get_config() -> AppConfig:
         alert_arbitrage_threshold_pct=float(os.getenv("ALERT_ARBITRAGE_THRESHOLD_PCT", "0.3")),
         alert_volume_spike_ratio=float(os.getenv("ALERT_VOLUME_SPIKE_RATIO", "2.0")),
         alert_price_thresholds=_parse_price_thresholds(os.getenv("ALERT_PRICE_THRESHOLDS", "")),
+        alert_anomaly_enabled=os.getenv("ALERT_ANOMALY_ENABLED", "true").lower() in ("1", "true", "yes"),
+        anomaly_contamination=float(os.getenv("ANOMALY_CONTAMINATION", "0.05")),
     )

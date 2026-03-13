@@ -57,6 +57,8 @@ const exchangePillsEl = el('exchangePills');
 const exchangeFilterEl = el('exchangeFilter');
 const arbitrageListEl = el('arbitrageList');
 const arbitrageSectionEl = el('arbitrageSection');
+const anomalyAlertsEl = el('anomalyAlerts');
+const anomalyAlertsSectionEl = el('anomalyAlertsSection');
 const toastContainerEl = el('toastContainer');
 const tickerTrackEl = el('tickerTrack');
 const tickerSectionEl = el('tickerSection');
@@ -466,6 +468,20 @@ function renderPriceAlerts(priceAlerts) {
   ).join('');
 }
 
+function renderAnomalyAlerts(anomalies) {
+  if (!anomalyAlertsSectionEl || !anomalyAlertsEl) return;
+  if (!anomalies?.length) {
+    anomalyAlertsSectionEl.style.display = 'none';
+    return;
+  }
+  anomalyAlertsSectionEl.style.display = 'block';
+  anomalyAlertsEl.innerHTML = anomalies.map((a) =>
+    `<div class="alert alert-anomaly"><span class="alert-icon">🔮</span> ${a.product_id}: ` +
+    `anomaly score ${a.anomaly_score} | trades ${a.trade_count} | vol $${a.volatility_usd?.toFixed(2) ?? '-'} | ` +
+    `change ${a.price_change_pct >= 0 ? '+' : ''}${a.price_change_pct?.toFixed(2) ?? '-'}%</div>`
+  ).join('');
+}
+
 function renderArbitrage(arbitrage) {
   if (!arbitrageSectionEl || !arbitrageListEl) return;
   if (!arbitrage?.length) {
@@ -524,7 +540,14 @@ function updateBarChart(metrics) {
         plugins: { legend: { labels: { color: tc.text } } },
         scales: {
           x: { ticks: { color: tc.text }, grid: { color: tc.gridStrong } },
-          y: { type: 'linear', position: 'left', title: { display: true, text: 'Avg Price (USD)', color: tc.text }, ticks: { color: tc.text }, grid: { color: tc.grid } },
+          y: {
+            type: 'logarithmic',
+            position: 'left',
+            title: { display: true, text: 'Avg Price (USD, log)', color: tc.text },
+            ticks: { color: tc.text, callback: (v) => v >= 1000 ? `$${(v / 1000).toFixed(0)}k` : v >= 1 ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}` },
+            grid: { color: tc.grid },
+            min: 0.01,
+          },
           y1: { type: 'linear', position: 'right', title: { display: true, text: 'Trade Count', color: tc.text }, ticks: { color: tc.text }, grid: { drawOnChartArea: false } },
         },
       },
@@ -557,7 +580,7 @@ function updateVolatilityChart(metrics) {
   const tc = getThemeColors();
   if (!metrics?.length) { if (volatilityChart) volatilityChart.data.datasets = []; return; }
   const labels = metrics.map((m) => m.product_id);
-  const vols = metrics.map((m) => m.volatility_usd);
+  const vols = metrics.map((m) => Math.max(0.01, m.volatility_usd ?? 0));
   const colors = metrics.map((m) => m.price_change_pct >= 0 ? 'rgba(63, 185, 80, 0.7)' : 'rgba(248, 81, 73, 0.7)');
 
   if (!volatilityChart) {
@@ -569,7 +592,12 @@ function updateVolatilityChart(metrics) {
         responsive: true, maintainAspectRatio: true,
         plugins: { legend: { display: false } },
         scales: {
-          x: { ticks: { color: tc.text }, grid: { color: tc.grid } },
+          x: {
+            type: 'logarithmic',
+            ticks: { color: tc.text, callback: (v) => v >= 1 ? v.toFixed(0) : v.toFixed(2) },
+            grid: { color: tc.grid },
+            min: 0.01,
+          },
           y: { ticks: { color: tc.text }, grid: { color: tc.grid } },
         },
       },
@@ -644,7 +672,10 @@ function updateExchangeChart(exchangeMetrics) {
 
   const datasets = exchanges.map((ex, i) => ({
     label: ex,
-    data: symbols.map((s) => bySymbol[s]?.[ex] ?? null),
+    data: symbols.map((s) => {
+      const v = bySymbol[s]?.[ex];
+      return v != null ? Math.max(0.01, v) : null;
+    }),
     backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
     borderRadius: 4,
   }));
@@ -658,7 +689,12 @@ function updateExchangeChart(exchangeMetrics) {
         plugins: { legend: { labels: { color: tc.text } } },
         scales: {
           x: { ticks: { color: tc.text }, grid: { color: tc.gridStrong } },
-          y: { ticks: { color: tc.text }, grid: { color: tc.grid } },
+          y: {
+            type: 'logarithmic',
+            ticks: { color: tc.text, callback: (v) => v >= 1000 ? `$${(v / 1000).toFixed(0)}k` : v >= 1 ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}` },
+            grid: { color: tc.grid },
+            min: 0.01,
+          },
         },
       },
     });
@@ -1225,6 +1261,7 @@ async function refresh() {
   updateSortIndicator();
   renderAlerts(data.alerts);
   renderPriceAlerts(data.price_alerts);
+  renderAnomalyAlerts(data.anomalies);
   renderArbitrage(data.arbitrage);
   renderTicker(data.recent_trades);
   updateBarChart(data.metrics);

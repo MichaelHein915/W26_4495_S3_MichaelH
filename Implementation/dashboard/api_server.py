@@ -18,7 +18,8 @@ from kafka import KafkaConsumer
 repo_root = Path(__file__).resolve().parents[2]
 sys.path.append(str(repo_root / "src"))
 from utils.config import get_config
-from utils.alerts import alert_arbitrage, alert_volume_spike, alert_price_threshold
+from utils.alerts import alert_arbitrage, alert_volume_spike, alert_price_threshold, alert_anomaly
+from utils.anomaly import AnomalyDetector
 
 app = Flask(__name__, static_folder="web", static_url_path="/")
 
@@ -31,6 +32,7 @@ _state = {
     "kafka_error": None,
     "last_poll_count": 0,
     "running": True,
+    "anomaly_detector": None,
 }
 _state_lock = threading.Lock()
 
@@ -554,6 +556,31 @@ def _build_dashboard_payload(window_minutes: int, exchange_filter: str) -> dict:
         )
 
     metrics = _compute_metrics(events)
+    anomalies = []
+    if config.alert_anomaly_enabled and metrics:
+        with _state_lock:
+            if _state["anomaly_detector"] is None:
+                _state["anomaly_detector"] = AnomalyDetector(
+                    contamination=config.anomaly_contamination,
+                )
+        detector = _state["anomaly_detector"]
+        anomalies = detector.detect(metrics)
+        for a in anomalies:
+            alert_anomaly(
+                config.slack_webhook_url,
+                a["product_id"],
+                a["anomaly_score"],
+                a["trade_count"],
+                a["volatility_usd"],
+                a["total_volume_qty"],
+                a["price_change_pct"],
+                email_to=config.alert_email_to,
+                smtp_host=config.smtp_host,
+                smtp_port=config.smtp_port,
+                smtp_user=config.smtp_user,
+                smtp_password=config.smtp_password,
+                smtp_use_tls=config.smtp_use_tls,
+            )
     timeseries = _compute_timeseries(events)
     sparklines = _compute_sparklines(events)
     exchange_stats = _compute_exchange_stats(events)
@@ -648,6 +675,7 @@ def _build_dashboard_payload(window_minutes: int, exchange_filter: str) -> dict:
         "timeseries": timeseries,
         "sparklines": sparklines,
         "alerts": alerts,
+        "anomalies": anomalies,
         "price_alerts": price_alerts,
         "arbitrage": arbitrage,
         "exchange_stats": exchange_stats,

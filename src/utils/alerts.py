@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 _last_arbitrage_alert: dict[str, datetime] = {}
 _last_volume_alert: dict[str, datetime] = {}
 _last_price_alert: dict[str, datetime] = {}
+_last_anomaly_alert: dict[str, datetime] = {}
 _alert_cooldown_sec = 60  # Don't re-alert same condition within 60 seconds
 
 
@@ -210,4 +211,53 @@ def alert_price_threshold(
         )
     if slack_ok or email_ok:
         logger.info("Price threshold alert sent: %s %s $%.2f", product_id, direction_label, threshold_price)
+    return slack_ok or email_ok
+
+
+def alert_anomaly(
+    webhook_url: str,
+    product_id: str,
+    anomaly_score: float,
+    trade_count: int | float,
+    volatility_usd: float,
+    total_volume_qty: float,
+    price_change_pct: float,
+    *,
+    email_to: str = "",
+    smtp_host: str = "",
+    smtp_port: int = 587,
+    smtp_user: str = "",
+    smtp_password: str = "",
+    smtp_use_tls: bool = True,
+) -> bool:
+    """Send ML anomaly detection alert to Slack and/or email."""
+    key = product_id
+    now = datetime.now(timezone.utc)
+    if key in _last_anomaly_alert:
+        if (now - _last_anomaly_alert[key]).total_seconds() < _alert_cooldown_sec:
+            return False
+    _last_anomaly_alert[key] = now
+
+    text = (
+        f"Anomaly detected: {product_id}\n"
+        f"- Score: {anomaly_score:.4f} (lower = more anomalous)\n"
+        f"- Trades: {trade_count:.0f} | Volatility: ${volatility_usd:.2f}\n"
+        f"- Volume: {total_volume_qty:.4f} | Change: {price_change_pct:+.2f}%"
+    )
+    slack_ok = _send_slack(webhook_url, text)
+    email_ok = False
+    if email_to and smtp_host:
+        recipients = [a.strip() for a in email_to.split(",") if a.strip()]
+        email_ok = _send_email(
+            smtp_host,
+            smtp_port,
+            smtp_user,
+            smtp_password,
+            smtp_use_tls,
+            recipients,
+            subject=f"[Crypto Alert] Anomaly: {product_id}",
+            body=text,
+        )
+    if slack_ok or email_ok:
+        logger.info("Anomaly alert sent: %s (score %.4f)", product_id, anomaly_score)
     return slack_ok or email_ok
