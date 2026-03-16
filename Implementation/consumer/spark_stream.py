@@ -10,6 +10,7 @@ from pyspark.sql.types import DoubleType, StringType, StructField, StructType
 repo_root = Path(__file__).resolve().parents[2]
 sys.path.append(str(repo_root / "src"))
 from utils.config import get_config
+from utils.metrics import CONSUMER_RUNNING, start_metrics_server
 
 
 config = get_config()
@@ -33,6 +34,8 @@ def _build_spark_session() -> SparkSession:
 
 
 def main() -> None:
+    start_metrics_server(default=9091)
+    CONSUMER_RUNNING.set(1)
     if reset_checkpoint:
         checkpoint_path = Path(checkpoint_dir)
         if checkpoint_path.exists():

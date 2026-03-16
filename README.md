@@ -152,6 +152,8 @@ This starts:
 - **Producer** — multi-exchange (Coinbase, Binance, Kraken) WebSocket → Kafka
 - **Consumer** — PySpark streaming aggregations (console output)
 - **Dashboard** — Flask API + UI at **http://localhost:5000**
+- **Prometheus** — metrics storage at **http://localhost:9093**
+- **Grafana** — dashboards at **http://localhost:3000** (admin/admin)
 
 To run in the background:
 
@@ -342,6 +344,29 @@ The setup script creates:
 
 To refresh data, re-run the setup script or configure a SPICE refresh schedule in the QuickSight console (Datasets → Schedule refresh).
 
+## Prometheus & Grafana (Observability)
+
+The pipeline exposes Prometheus metrics for monitoring. When running with Docker Compose, Prometheus and Grafana are started automatically.
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| **Prometheus** | http://localhost:9093 | Metrics storage and query UI |
+| **Grafana** | http://localhost:3000 | Dashboards (login: `admin` / `admin`) |
+
+### Metrics Exposed
+
+| Metric | Component | Description |
+|--------|-----------|-------------|
+| `crypto_trades_published_total` | Producer | Trades published to Kafka per exchange |
+| `crypto_kafka_send_errors_total` | Producer | Kafka send failures per exchange |
+| `crypto_dashboard_events_total` | Dashboard | Events in dashboard buffer |
+| `crypto_dashboard_data_freshness_seconds` | Dashboard | Seconds since last event |
+| `crypto_dashboard_requests_total` | Dashboard | API request count by endpoint |
+| `crypto_dashboard_request_duration_seconds` | Dashboard | API latency histogram |
+| `crypto_consumer_running` | Consumer | 1 if Spark consumer is running |
+
+The pre-provisioned **Crypto Pipeline** dashboard in Grafana shows trades per minute, data freshness, API latency, and pipeline health. Change the default admin password after first login.
+
 ## Stopping the Pipeline
 
 1. Stop each Python process with `Ctrl+C`.
@@ -355,7 +380,7 @@ docker compose down
 
 ```
 cryto-streaming-pipeline/
-├── docker-compose.yml              # Full pipeline: Kafka, producer, consumer, dashboard (+ optional AWS sinks)
+├── docker-compose.yml              # Full pipeline: Kafka, producer, consumer, dashboard, Prometheus, Grafana
 ├── Dockerfile.producer             # Multi-exchange producer image
 ├── Dockerfile.consumer              # PySpark consumer image
 ├── Dockerfile.dashboard             # Flask dashboard image
@@ -364,7 +389,11 @@ cryto-streaming-pipeline/
 ├── requirements.txt                # Python dependencies
 ├── .env                            # Environment configuration (not committed)
 ├── config/
-│   └── env.example                 # Environment variable template
+│   ├── env.example                 # Environment variable template
+│   ├── prometheus.yml              # Prometheus scrape config
+│   └── grafana/
+│       ├── provisioning/           # Grafana datasources & dashboards
+│       └── dashboards/             # Pre-built Crypto Pipeline dashboard
 ├── src/
 │   └── utils/
 │       ├── config.py               # Centralized AppConfig loader

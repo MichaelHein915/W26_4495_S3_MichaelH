@@ -27,6 +27,13 @@ from kafka import KafkaProducer
 
 logger = logging.getLogger(__name__)
 
+# Optional Prometheus metrics (avoid import if not installed)
+try:
+    from utils.metrics import KAFKA_SEND_ERRORS, TRADES_PUBLISHED
+    _METRICS_AVAILABLE = True
+except ImportError:
+    _METRICS_AVAILABLE = False
+
 
 class BaseExchange(abc.ABC):
     """Abstract WebSocket → Kafka producer for a single exchange."""
@@ -87,6 +94,8 @@ class BaseExchange(abc.ABC):
         product_id = normalised.get("product_id", "unknown")
         self._logger.info("[%s] %s: $%s", self.name, product_id, normalised.get("price"))
         future = self._producer.send(self._topic, key=product_id, value=normalised)
+        if _METRICS_AVAILABLE:
+            future.add_callback(lambda *_: TRADES_PUBLISHED.labels(exchange=self.name).inc())
         future.add_errback(self._on_send_error)
 
     def _on_error(self, ws: Any, error: Exception) -> None:
@@ -97,6 +106,8 @@ class BaseExchange(abc.ABC):
         self._producer.flush(10)
 
     def _on_send_error(self, excp: Exception) -> None:
+        if _METRICS_AVAILABLE:
+            KAFKA_SEND_ERRORS.labels(exchange=self.name).inc()
         self._logger.error("[%s] Kafka send failed", self.name, exc_info=excp)
 
     # ── Public API ───────────────────────────────────────────────────

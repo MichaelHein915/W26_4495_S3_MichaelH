@@ -22,6 +22,7 @@ from utils.config import get_config
 from exchange_binance import BinanceProducer
 from exchange_coinbase import CoinbaseProducer
 from exchange_kraken import KrakenProducer
+from utils.metrics import start_metrics_server
 
 EXCHANGE_CLASSES = {
     "coinbase": CoinbaseProducer,
@@ -38,6 +39,7 @@ DEFAULT_WS_URLS = {
 
 def main() -> None:
     config = get_config()
+    start_metrics_server(default=9090)
     log_level = os.getenv("PRODUCER_LOG_LEVEL", config.log_level)
     logging.basicConfig(
         level=getattr(logging, log_level.upper(), logging.INFO),

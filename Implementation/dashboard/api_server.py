@@ -14,14 +14,27 @@ from pathlib import Path
 import pandas as pd
 from flask import Flask, jsonify, request, send_from_directory
 from kafka import KafkaConsumer
+from prometheus_client import make_wsgi_app
+from werkzeug.middleware.dispatcher import DispatcherMiddleware
 
 repo_root = Path(__file__).resolve().parents[2]
 sys.path.append(str(repo_root / "src"))
 from utils.config import get_config
 from utils.alerts import alert_arbitrage, alert_volume_spike, alert_price_threshold, alert_anomaly
 from utils.anomaly import AnomalyDetector
+from utils.metrics import (
+    DASHBOARD_EVENTS,
+    DASHBOARD_FRESHNESS_SECONDS,
+    DASHBOARD_KAFKA_ERROR,
+    DASHBOARD_LAST_POLL_COUNT,
+    DASHBOARD_REQUEST_DURATION,
+    DASHBOARD_REQUESTS,
+)
 
 app = Flask(__name__, static_folder="web", static_url_path="/")
+
+# Mount Prometheus metrics at /metrics
+app.wsgi_app = DispatcherMiddleware(app.wsgi_app, {"/metrics": make_wsgi_app()})
 
 # Shared state (updated by background thread)
 _state = {
@@ -35,6 +48,23 @@ _state = {
     "anomaly_detector": None,
 }
 _state_lock = threading.Lock()
+
+
+@app.before_request
+def _before_request():
+    request.start_time = time.time()
+
+
+@app.after_request
+def _after_request(response):
+    if hasattr(request, "start_time"):
+        endpoint = request.endpoint or request.path or "unknown"
+        DASHBOARD_REQUESTS.labels(endpoint=str(endpoint), method=request.method).inc()
+        DASHBOARD_REQUEST_DURATION.labels(endpoint=str(endpoint)).observe(
+            time.time() - request.start_time
+        )
+    return response
+
 
 WINDOW_MINUTES = 3
 MAX_RETENTION_MINUTES = 10
@@ -97,6 +127,8 @@ def _poll_and_ingest():
             with _state_lock:
                 _state["last_poll_count"] = len(messages)
                 _state["kafka_error"] = None
+                DASHBOARD_LAST_POLL_COUNT.set(len(messages))
+                DASHBOARD_KAFKA_ERROR.set(0)
 
                 for msg in messages:
                     event_time = _parse_event_time(msg.get("time"))
@@ -133,9 +165,16 @@ def _poll_and_ingest():
                 while _state["events"] and _state["events"][0]["event_time"] < cutoff:
                     _state["events"].popleft()
 
+                DASHBOARD_EVENTS.set(len(_state["events"]))
+                if _state["last_event_time"]:
+                    DASHBOARD_FRESHNESS_SECONDS.set(
+                        (datetime.now(timezone.utc) - _state["last_event_time"]).total_seconds()
+                    )
+
         except Exception as e:
             with _state_lock:
                 _state["kafka_error"] = str(e)
+                DASHBOARD_KAFKA_ERROR.set(1)
             try:
                 consumer.close()
             except Exception:

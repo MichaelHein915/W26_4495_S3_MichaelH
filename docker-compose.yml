@@ -56,6 +56,9 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       KAFKA_TOPIC_RAW: crypto.trades.raw
       EXCHANGES: coinbase,binance,kraken
+      METRICS_PORT: 9090
+    ports:
+      - "9090:9090"
     networks:
       - crypto-network
     restart: unless-stopped
@@ -72,6 +75,9 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       KAFKA_TOPIC_RAW: crypto.trades.raw
       CHECKPOINT_DIR: /app/data/checkpoints/raw_console
+      METRICS_PORT: 9091
+    ports:
+      - "9091:9091"
     volumes:
       - spark-checkpoints:/app/data/checkpoints
     networks:
@@ -137,8 +143,49 @@ services:
       - crypto-network
     restart: unless-stopped
 
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: crypto-prometheus
+    depends_on:
+      - producer
+      - dashboard
+      - consumer
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9093:9090"
+    networks:
+      - crypto-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: crypto-grafana
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_HTTP_PORT: 3000
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    networks:
+      - crypto-network
+    restart: unless-stopped
+
 volumes:
   spark-checkpoints:
+  grafana-data:
 
 networks:
   crypto-network:
