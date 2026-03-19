@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>MichaelH_ProgressReport4.md</title>
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+
+<style>
+/* https://github.com/microsoft/vscode/blob/master/extensions/markdown-language-features/media/markdown.css */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+body {
+	font-family: var(--vscode-markdown-font-family, -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif);
+	font-size: var(--vscode-markdown-font-size, 14px);
+	padding: 0 26px;
+	line-height: var(--vscode-markdown-line-height, 22px);
+	word-wrap: break-word;
+}
+
+#code-csp-warning {
+	position: fixed;
+	top: 0;
+	right: 0;
+	color: white;
+	margin: 16px;
+	text-align: center;
+	font-size: 12px;
+	font-family: sans-serif;
+	background-color:#444444;
+	cursor: pointer;
+	padding: 6px;
+	box-shadow: 1px 1px 1px rgba(0,0,0,.25);
+}
+
+#code-csp-warning:hover {
+	text-decoration: none;
+	background-color:#007acc;
+	box-shadow: 2px 2px 2px rgba(0,0,0,.25);
+}
+
+body.scrollBeyondLastLine {
+	margin-bottom: calc(100vh - 22px);
+}
+
+body.showEditorSelection .code-line {
+	position: relative;
+}
+
+body.showEditorSelection .code-active-line:before,
+body.showEditorSelection .code-line:hover:before {
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0;
+	left: -12px;
+	height: 100%;
+}
+
+body.showEditorSelection li.code-active-line:before,
+body.showEditorSelection li.code-line:hover:before {
+	left: -30px;
+}
+
+.vscode-light.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.15);
+}
+
+.vscode-light.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.40);
+}
+
+.vscode-light.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-dark.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.4);
+}
+
+.vscode-dark.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.60);
+}
+
+.vscode-dark.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-high-contrast.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 160, 0, 0.7);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 160, 0, 1);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+img {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+a {
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+a:focus,
+input:focus,
+select:focus,
+textarea:focus {
+	outline: 1px solid -webkit-focus-ring-color;
+	outline-offset: -1px;
+}
+
+hr {
+	border: 0;
+	height: 2px;
+	border-bottom: 2px solid;
+}
+
+h1 {
+	padding-bottom: 0.3em;
+	line-height: 1.2;
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+}
+
+h1, h2, h3 {
+	font-weight: normal;
+}
+
+table {
+	border-collapse: collapse;
+}
+
+table > thead > tr > th {
+	text-align: left;
+	border-bottom: 1px solid;
+}
+
+table > thead > tr > th,
+table > thead > tr > td,
+table > tbody > tr > th,
+table > tbody > tr > td {
+	padding: 5px 10px;
+}
+
+table > tbody > tr + tr > td {
+	border-top: 1px solid;
+}
+
+blockquote {
+	margin: 0 7px 0 5px;
+	padding: 0 16px 0 10px;
+	border-left-width: 5px;
+	border-left-style: solid;
+}
+
+code {
+	font-family: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace, "Droid Sans Fallback";
+	font-size: 1em;
+	line-height: 1.357em;
+}
+
+body.wordWrap pre {
+	white-space: pre-wrap;
+}
+
+pre:not(.hljs),
+pre.hljs code > div {
+	padding: 16px;
+	border-radius: 3px;
+	overflow: auto;
+}
+
+pre code {
+	color: var(--vscode-editor-foreground);
+	tab-size: 4;
+}
+
+/** Theming */
+
+.vscode-light pre {
+	background-color: rgba(220, 220, 220, 0.4);
+}
+
+.vscode-dark pre {
+	background-color: rgba(10, 10, 10, 0.4);
+}
+
+.vscode-high-contrast pre {
+	background-color: rgb(0, 0, 0);
+}
+
+.vscode-high-contrast h1 {
+	border-color: rgb(0, 0, 0);
+}
+
+.vscode-light table > thead > tr > th {
+	border-color: rgba(0, 0, 0, 0.69);
+}
+
+.vscode-dark table > thead > tr > th {
+	border-color: rgba(255, 255, 255, 0.69);
+}
+
+.vscode-light h1,
+.vscode-light hr,
+.vscode-light table > tbody > tr + tr > td {
+	border-color: rgba(0, 0, 0, 0.18);
+}
+
+.vscode-dark h1,
+.vscode-dark hr,
+.vscode-dark table > tbody > tr + tr > td {
+	border-color: rgba(255, 255, 255, 0.18);
+}
+
+</style>
+
+<style>
+/* Tomorrow Theme */
+/* http://jmblog.github.com/color-themes-for-google-code-highlightjs */
+/* Original theme - https://github.com/chriskempson/tomorrow-theme */
+
+/* Tomorrow Comment */
+.hljs-comment,
+.hljs-quote {
+	color: #8e908c;
+}
+
+/* Tomorrow Red */
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-regexp,
+.hljs-deletion {
+	color: #c82829;
+}
+
+/* Tomorrow Orange */
+.hljs-number,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-literal,
+.hljs-type,
+.hljs-params,
+.hljs-meta,
+.hljs-link {
+	color: #f5871f;
+}
+
+/* Tomorrow Yellow */
+.hljs-attribute {
+	color: #eab700;
+}
+
+/* Tomorrow Green */
+.hljs-string,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+	color: #718c00;
+}
+
+/* Tomorrow Blue */
+.hljs-title,
+.hljs-section {
+	color: #4271ae;
+}
+
+/* Tomorrow Purple */
+.hljs-keyword,
+.hljs-selector-tag {
+	color: #8959a8;
+}
+
+.hljs {
+	display: block;
+	overflow-x: auto;
+	color: #4d4d4c;
+	padding: 0.5em;
+}
+
+.hljs-emphasis {
+	font-style: italic;
+}
+
+.hljs-strong {
+	font-weight: bold;
+}
+</style>
+
+<style>
+/*
+ * Markdown PDF CSS
+ */
+
+ body {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "Meiryo";
+	padding: 0 12px;
+}
+
+pre {
+	background-color: #f8f8f8;
+	border: 1px solid #cccccc;
+	border-radius: 3px;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+}
+
+pre:not(.hljs) {
+	padding: 23px;
+	line-height: 19px;
+}
+
+blockquote {
+	background: rgba(127, 127, 127, 0.1);
+	border-color: rgba(0, 122, 204, 0.5);
+}
+
+.emoji {
+	height: 1.4em;
+}
+
+code {
+	font-size: 14px;
+	line-height: 19px;
+}
+
+/* for inline code */
+:not(pre):not(.hljs) > code {
+	color: #C9AE75; /* Change the old color so it seems less like an error */
+	font-size: inherit;
+}
+
+/* Page Break : use <div class="page"/> to insert page break
+-------------------------------------------------------- */
+.page {
+	page-break-after: always;
+}
+
+</style>
+
+<script src="https://unpkg.com/mermaid/dist/mermaid.min.js"></script>
+</head>
+<body>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: document.body.classList.contains('vscode-dark') || document.body.classList.contains('vscode-high-contrast')
+          ? 'dark'
+          : 'default'
+    });
+  </script>
+<h1 id="progress-report-4">Progress Report 4</h1>
+<p><strong>Student:</strong> Michael Hein (300375535)<br>
+<strong>Course:</strong> CSIS 4495 – Applied Research Project<br>
+<strong>Project:</strong> Real-Time Cryptocurrency Streaming Pipeline<br>
+<strong>Reporting Period:</strong> Mar 9 – Mar 17, 2026</p>
+<hr>
+<h2 id="1-work-datehours-logs">1. Work Date/Hours Logs</h2>
+<table>
+<thead>
+<tr>
+<th>Date</th>
+<th>Number of Hours</th>
+<th>Description of Work Done</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Mar 10, 2026</td>
+<td>1.5</td>
+<td>Implemented price threshold alerts — configurable <code>ALERT_PRICE_THRESHOLDS</code> (e.g., <code>BTC-USD:above:100000</code>) to trigger Slack/email when a symbol crosses above or below a price. Updated <code>src/utils/alerts.py</code> and <code>config.py</code>.</td>
+</tr>
+<tr>
+<td>Mar 10, 2026</td>
+<td>1</td>
+<td>Removed WebSocket dependency from dashboard (switched to polling-only), fixed favicon path, and updated <code>config/env.example</code> with new alert variables. Code checked into repo.</td>
+</tr>
+<tr>
+<td>Mar 10, 2026</td>
+<td>0.5</td>
+<td>Added unit tests for price threshold config parsing in <code>tests/test_config.py</code>.</td>
+</tr>
+<tr>
+<td>Mar 12, 2026</td>
+<td>2</td>
+<td>Implemented CI/CD — GitHub Actions workflows: <code>test.yml</code> (pytest, ruff lint/format on Python 3.11/3.12) and <code>docker-build.yml</code> (build all Docker images). Added <code>.dockerignore</code> and <code>ruff.toml</code>.</td>
+</tr>
+<tr>
+<td>Mar 12, 2026</td>
+<td>2</td>
+<td>Created Dockerfiles for producer, consumer, dashboard, S3-sink, and Redshift-sink. Extended <code>docker-compose.yml</code> to run full pipeline (Kafka, producer, consumer, dashboard) with optional AWS profile.</td>
+</tr>
+<tr>
+<td>Mar 12, 2026</td>
+<td>1.5</td>
+<td>Added new dashboard visualizations: exchange price comparison (grouped bar chart), exchange filter (dropdown + pills), KPI cards, configurable refresh rate and time window. Updated <code>api_server.py</code>, <code>index.html</code>, <code>app.js</code>, <code>styles.css</code>.</td>
+</tr>
+<tr>
+<td>Mar 12, 2026</td>
+<td>1.5</td>
+<td>Implemented ML anomaly detection (<code>src/utils/anomaly.py</code>) — Isolation Forest on trade_count, volatility, volume, price_change. Configurable via <code>ALERT_ANOMALY_ENABLED</code> and <code>ANOMALY_CONTAMINATION</code>. Integrated into dashboard API.</td>
+</tr>
+<tr>
+<td>Mar 12, 2026</td>
+<td>1</td>
+<td>Updated exchange adapters and sinks for Docker compatibility (env vars, health checks). Fixed tests for new config and mocked services.</td>
+</tr>
+<tr>
+<td>Mar 15, 2026</td>
+<td>2</td>
+<td>Implemented Prometheus metrics (<code>src/utils/metrics.py</code>) — counters for trades published, Kafka errors, dashboard requests; gauges for events, freshness, consumer status. Instrumented producer, consumer, and dashboard.</td>
+</tr>
+<tr>
+<td>Mar 15, 2026</td>
+<td>1.5</td>
+<td>Added Prometheus scrape config (<code>config/prometheus.yml</code>) and Grafana provisioning — datasource, pre-built Crypto Pipeline dashboard (trades/min, data freshness, API latency, pipeline health).</td>
+</tr>
+<tr>
+<td>Mar 15, 2026</td>
+<td>1</td>
+<td>Integrated Prometheus and Grafana into <code>docker-compose.yml</code>. Updated README with observability section and metrics table.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Total Hours This Period: ~15.5</strong></p>
+<hr>
+<h2 id="2-summary-description-of-work-done">2. Summary Description of Work Done</h2>
+<p>This reporting period focused on four main areas: (1) enhanced alerting with price thresholds, (2) CI/CD and containerization, (3) ML-based anomaly detection and dashboard improvements, and (4) observability with Prometheus and Grafana.</p>
+<p><strong>Price Threshold Alerts:</strong> I extended the alerting system to support configurable price thresholds (e.g., <code>BTC-USD:above:100000</code>). When a symbol crosses above or below a configured price, the pipeline triggers Slack and/or email alerts. I also removed the WebSocket dependency from the dashboard in favor of polling-only to simplify the architecture.</p>
+<p><strong>CI/CD and Docker:</strong> I set up GitHub Actions for automated testing (pytest on Python 3.11 and 3.12, ruff lint and format checks) and Docker image builds. The pipeline can now run end-to-end via <code>docker compose up</code>, with separate Dockerfiles for the producer, consumer, dashboard, and AWS sinks. This improves reproducibility and deployment.</p>
+<p><strong>Anomaly Detection and Dashboard:</strong> I implemented an Isolation Forest–based anomaly detector that flags unusual patterns in trade count, volatility, volume, and price change per symbol. The detector uses a rolling window and is configurable via environment variables. The dashboard gained new visualizations: exchange price comparison, exchange filter pills, KPI cards, and configurable refresh rate and time window.</p>
+<p><strong>Observability:</strong> I added Prometheus metrics across the pipeline (trades published, Kafka errors, dashboard requests, data freshness, consumer status) and integrated Prometheus and Grafana into Docker Compose. A pre-provisioned Grafana dashboard displays trades per minute, data freshness, API latency, and pipeline health.</p>
+<p>One issue encountered was Grafana’s requirement for a specific datasource format — this was resolved by using provisioning YAML to auto-configure the Prometheus datasource and dashboard on startup.</p>
+<hr>
+<h2 id="3-repo-check-in-of-implementation-completed">3. Repo Check-In of Implementation Completed</h2>
+<p>The following files/folders have been checked into the repo since the last progress report:</p>
+<p><strong>New files:</strong></p>
+<ul>
+<li><code>src/utils/metrics.py</code> — Prometheus metrics definitions (counters, gauges, histograms)</li>
+<li><code>src/utils/anomaly.py</code> — Isolation Forest–based anomaly detection</li>
+<li><code>config/prometheus.yml</code> — Prometheus scrape configuration</li>
+<li><code>config/grafana/provisioning/datasources/datasource.yml</code> — Grafana Prometheus datasource</li>
+<li><code>config/grafana/provisioning/dashboards/dashboard.yml</code> — Dashboard provisioning</li>
+<li><code>config/grafana/dashboards/crypto-pipeline.json</code> — Pre-built Crypto Pipeline dashboard</li>
+<li><code>.github/workflows/test.yml</code> — pytest + ruff CI</li>
+<li><code>.github/workflows/docker-build.yml</code> — Docker image build CI</li>
+<li><code>Dockerfile.producer</code>, <code>Dockerfile.consumer</code>, <code>Dockerfile.dashboard</code>, <code>Dockerfile.s3-sink</code>, <code>Dockerfile.redshift-sink</code></li>
+<li><code>.dockerignore</code>, <code>ruff.toml</code></li>
+</ul>
+<p><strong>Modified files:</strong></p>
+<ul>
+<li><code>Implementation/dashboard/api_server.py</code> — Anomaly detection, price alerts, Prometheus instrumentation, new endpoints</li>
+<li><code>Implementation/dashboard/web/index.html</code>, <code>app.js</code>, <code>styles.css</code> — Exchange comparison, filter pills, KPI cards, configurable UI</li>
+<li><code>Implementation/producer/base_exchange.py</code>, <code>multi_exchange_producer.py</code> — Prometheus metrics</li>
+<li><code>Implementation/consumer/spark_stream.py</code> — Prometheus metrics</li>
+<li><code>Implementation/athena/s3_sink.py</code>, <code>Implementation/redshift/redshift_sink.py</code> — Docker compatibility</li>
+<li><code>Implementation/producer/exchange_*.py</code>, <code>Implementation/quicksight/setup_quicksight.py</code> — Env/config updates</li>
+<li><code>docker-compose.yml</code> — Full pipeline + Prometheus + Grafana</li>
+<li><code>config/env.example</code> — Price thresholds, anomaly config</li>
+<li><code>src/utils/alerts.py</code>, <code>config.py</code> — Price threshold logic</li>
+<li><code>README.md</code> — Observability section, metrics table, Docker instructions</li>
+<li><code>requirements.txt</code> — prometheus_client</li>
+<li><code>tests/test_config.py</code>, <code>test_exchanges.py</code>, <code>test_quicksight.py</code>, <code>test_sinks.py</code> — Updated for new config and mocks</li>
+</ul>
+<hr>
+<h2 id="4-ai-use-section">4. AI Use Section</h2>
+<table>
+<thead>
+<tr>
+<th>AI Tool Name</th>
+<th>Version, Account Type</th>
+<th>Specific Feature for Which the AI Tool Was Used</th>
+<th>Value Addition</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cursor (Claude)</td>
+<td>Claude-3.5-Sonnet / Premium</td>
+<td>Price threshold alert design — config format and parsing logic</td>
+<td>Validated regex and edge cases; integrated with existing Slack/email alert flow</td>
+</tr>
+<tr>
+<td>Cursor (Claude)</td>
+<td>Claude-3.5-Sonnet / Premium</td>
+<td>GitHub Actions workflows — test.yml and docker-build.yml structure</td>
+<td>Adapted for multi-Python-version matrix; verified ruff and pytest commands locally</td>
+</tr>
+<tr>
+<td>Cursor (Claude)</td>
+<td>Claude-3.5-Sonnet / Premium</td>
+<td>Isolation Forest anomaly detection — feature selection and sklearn usage</td>
+<td>Chose features (trade_count, volatility, volume, price_change); tuned contamination parameter; tested on sample data</td>
+</tr>
+<tr>
+<td>Cursor (Claude)</td>
+<td>Claude-3.5-Sonnet / Premium</td>
+<td>Prometheus metrics — counter/gauge/histogram definitions and labels</td>
+<td>Mapped metrics to actual code paths; ensured labels matched scrape config</td>
+</tr>
+<tr>
+<td>Cursor (Claude)</td>
+<td>Claude-3.5-Sonnet / Premium</td>
+<td>Grafana dashboard JSON — panel layout and PromQL queries</td>
+<td>Customized queries for pipeline-specific metrics; verified datasource provisioning</td>
+</tr>
+<tr>
+<td>Cursor (Claude)</td>
+<td>Claude-3.5-Sonnet / Premium</td>
+<td>Docker Compose multi-service setup</td>
+<td>Tested full stack locally; resolved port and dependency ordering</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="5-appendix-ai-prompt-history">5. Appendix: AI Prompt History</h2>
+<p><strong>Prompt 1 — Price threshold alerts</strong></p>
+<blockquote>
+<p>&quot;I need to add configurable price threshold alerts — when BTC-USD goes above 100000 or ETH-USD goes below 3000, send Slack/email. What format should I use for the config and how do I integrate with the existing alerts module?&quot;</p>
+</blockquote>
+<p><strong>Prompt 2 — CI/CD setup</strong></p>
+<blockquote>
+<p>&quot;Set up GitHub Actions for my Python project: run pytest on push/PR, and run ruff check and format. Support Python 3.11 and 3.12.&quot;</p>
+</blockquote>
+<p><strong>Prompt 3 — Docker Compose full pipeline</strong></p>
+<blockquote>
+<p>&quot;I want to run the entire crypto pipeline with docker compose — Kafka, producer, consumer, dashboard. Create Dockerfiles for each component and update docker-compose.yml.&quot;</p>
+</blockquote>
+<p><strong>Prompt 4 — Anomaly detection</strong></p>
+<blockquote>
+<p>&quot;Add ML-based anomaly detection to the dashboard — detect unusual trade patterns per symbol. Use sklearn Isolation Forest. What features should I use from the metrics?&quot;</p>
+</blockquote>
+<p><strong>Prompt 5 — Prometheus metrics</strong></p>
+<blockquote>
+<p>&quot;Add Prometheus metrics to the pipeline: trades published per exchange, Kafka errors, dashboard request count and latency, data freshness. Where should I expose the /metrics endpoint?&quot;</p>
+</blockquote>
+<p><strong>Prompt 6 — Grafana dashboard</strong></p>
+<blockquote>
+<p>&quot;Create a Grafana dashboard for the crypto pipeline metrics. I want to see trades per minute, data freshness, API latency, and whether the consumer is running. Use provisioning so it auto-loads.&quot;</p>
+</blockquote>
+<p><strong>Prompt 7 — Grafana datasource error</strong></p>
+<blockquote>
+<p>&quot;Grafana says 'datasource not found' when loading the dashboard. My prometheus.yml scrape config targets localhost:9093. How do I fix the provisioning?&quot;</p>
+</blockquote>
+
+</body>
+</html>

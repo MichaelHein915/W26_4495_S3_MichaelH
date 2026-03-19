@@ -26,10 +26,12 @@ let prevAlertKeys = new Set();
 let currentModalSymbol = null;
 let currentModalChartType = 'candlestick';
 let exchangeFilter = '';
+let directionFilter = 'all';
+let favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
 
 const CHART_COLORS = [
-  '#58a6ff', '#3fb950', '#d29922', '#f85149', '#db6d28',
-  '#a371f7', '#79c0ff', '#7ee787', '#f0883e', '#d2a8ff',
+  '#3b82f6', '#22c55e', '#eab308', '#ef4444', '#f97316',
+  '#a855f7', '#06b6d4', '#ec4899', '#84cc16', '#6366f1',
 ];
 
 const el = (id) => document.getElementById(id);
@@ -62,6 +64,7 @@ const anomalyAlertsSectionEl = el('anomalyAlertsSection');
 const toastContainerEl = el('toastContainer');
 const tickerTrackEl = el('tickerTrack');
 const tickerSectionEl = el('tickerSection');
+const watchlistGridEl = el('watchlistGrid');
 
 function setStatusClass(elem, status) {
   elem.classList.remove('ok', 'warn', 'error');
@@ -70,6 +73,118 @@ function setStatusClass(elem, status) {
 
 function fmt(num) { return new Intl.NumberFormat().format(num); }
 function fmtVol(val) { return parseFloat(val).toFixed(4); }
+function fmtUsd(val) {
+  if (val >= 1000) return `$${(val / 1000).toFixed(1)}k`;
+  if (val >= 1) return `$${val.toFixed(2)}`;
+  return `$${val.toFixed(4)}`;
+}
+
+// ─── Favorites ───────────────────────────────────────────────────────
+
+function saveFavorites() {
+  localStorage.setItem('favorites', JSON.stringify(favorites));
+}
+
+function toggleFavorite(symbol) {
+  const idx = favorites.indexOf(symbol);
+  if (idx >= 0) favorites.splice(idx, 1);
+  else favorites.push(symbol);
+  saveFavorites();
+  renderMetricsTable(metricsCache);
+  renderWatchlist(metricsCache);
+}
+
+function renderWatchlist(metrics) {
+  if (!watchlistGridEl) return;
+  if (!favorites.length) {
+    watchlistGridEl.innerHTML = `
+      <div class="watchlist-empty">
+        <div class="watchlist-empty-icon">⭐</div>
+        <div>Star symbols in the table to add them here</div>
+      </div>`;
+    return;
+  }
+  const favMetrics = favorites
+    .map((s) => (metrics || []).find((m) => m.product_id === s))
+    .filter(Boolean);
+  if (!favMetrics.length) {
+    watchlistGridEl.innerHTML = `
+      <div class="watchlist-empty">
+        <div class="watchlist-empty-icon">⏳</div>
+        <div>Waiting for data for favorited symbols…</div>
+      </div>`;
+    return;
+  }
+  watchlistGridEl.innerHTML = favMetrics.map((m) => {
+    const pct = m.price_change_pct;
+    const cls = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
+    const arrow = pct > 0 ? '▲' : pct < 0 ? '▼' : '–';
+    return `<div class="watchlist-card" data-symbol="${m.product_id}">
+      <div class="watchlist-card-header">
+        <span class="watchlist-symbol">${m.product_id}</span>
+        <span class="watchlist-change ${cls}">${arrow} ${Math.abs(pct).toFixed(2)}%</span>
+      </div>
+      <div class="watchlist-price">${fmtUsd(m.avg_price_usd)}</div>
+      <div class="watchlist-meta">
+        <span>${fmt(m.trade_count)} trades</span>
+        <span>Vol: ${fmtVol(m.total_volume_qty)}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  watchlistGridEl.querySelectorAll('.watchlist-card').forEach((card) => {
+    card.addEventListener('click', () => openModal(card.dataset.symbol));
+  });
+}
+
+// ─── Market Insights ─────────────────────────────────────────────────
+
+function renderMarketInsights(metrics) {
+  if (!metrics?.length) return;
+
+  const gainers = metrics.filter((m) => m.price_change_pct > 0).length;
+  const losers = metrics.filter((m) => m.price_change_pct < 0).length;
+  const total = metrics.length;
+  const dirEl = el('insightDirection');
+  if (dirEl) {
+    const pctUp = total > 0 ? ((gainers / total) * 100).toFixed(0) : 0;
+    dirEl.textContent = `${pctUp}% up · ${gainers}▲ ${losers}▼`;
+    dirEl.style.color = gainers > losers ? 'var(--accent-green)' : gainers < losers ? 'var(--accent-red)' : 'var(--text-secondary)';
+  }
+
+  const avgChange = metrics.reduce((s, m) => s + m.price_change_pct, 0) / total;
+  const avgEl = el('insightAvgChange');
+  if (avgEl) {
+    avgEl.textContent = `${avgChange >= 0 ? '+' : ''}${avgChange.toFixed(3)}%`;
+    avgEl.style.color = avgChange >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+  }
+
+  const mostActive = [...metrics].sort((a, b) => b.trade_count - a.trade_count)[0];
+  const activeEl = el('insightMostActive');
+  if (activeEl && mostActive) {
+    activeEl.textContent = `${mostActive.product_id} (${fmt(mostActive.trade_count)})`;
+  }
+
+  const highVol = [...metrics].sort((a, b) => b.total_volume_qty - a.total_volume_qty)[0];
+  const volEl = el('insightHighVol');
+  if (volEl && highVol) {
+    volEl.textContent = `${highVol.product_id} (${fmtVol(highVol.total_volume_qty)})`;
+  }
+
+  const mostVolatile = [...metrics].sort((a, b) => b.volatility_usd - a.volatility_usd)[0];
+  const volatileEl = el('insightVolatile');
+  if (volatileEl && mostVolatile) {
+    volatileEl.textContent = `${mostVolatile.product_id} ($${mostVolatile.volatility_usd.toFixed(2)})`;
+  }
+
+  const totalVolume = metrics.reduce((s, m) => s + m.total_volume_qty, 0);
+  const btcVol = metrics.find((m) => m.product_id === 'BTC-USD')?.total_volume_qty || 0;
+  const domEl = el('insightBtcDom');
+  if (domEl) {
+    const dom = totalVolume > 0 ? ((btcVol / totalVolume) * 100).toFixed(1) : '0.0';
+    domEl.textContent = `${dom}% by volume`;
+  }
+}
 
 // ─── Theme toggle ───────────────────────────────────────────────────
 
@@ -85,8 +200,8 @@ function applyTheme(theme) {
 
   [barChart, lineChart, donutChart, volatilityChart, volumeChart, exchangeChart, radarChart, bubbleChart, stackedVolumeChart].forEach((c) => {
     if (!c) return;
-    const txtColor = theme === 'light' ? '#656d76' : '#8b949e';
-    const gridColor = theme === 'light' ? 'rgba(0,0,0,0.08)' : 'rgba(48,54,61,0.3)';
+    const txtColor = theme === 'light' ? '#64748b' : '#64748b';
+    const gridColor = theme === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(55,65,81,0.3)';
     Object.values(c.options.scales || {}).forEach((axis) => {
       if (axis.ticks) axis.ticks.color = txtColor;
       if (axis.grid) axis.grid.color = gridColor;
@@ -362,15 +477,15 @@ function renderTopMovers(metrics) {
 function drawSparkline(canvas, prices) {
   if (!prices || prices.length < 2) return;
   const ctx = canvas.getContext('2d');
-  const w = canvas.width = 80;
-  const h = canvas.height = 24;
+  const w = canvas.width = 90;
+  const h = canvas.height = 28;
   ctx.clearRect(0, 0, w, h);
   const min = Math.min(...prices);
   const max = Math.max(...prices);
   const range = max - min || 1;
   const pad = 2;
   const up = prices[prices.length - 1] >= prices[0];
-  const color = up ? '#3fb950' : '#f85149';
+  const color = up ? '#22c55e' : '#ef4444';
   ctx.beginPath();
   prices.forEach((p, i) => {
     const x = (i / (prices.length - 1)) * (w - pad * 2) + pad;
@@ -384,7 +499,7 @@ function drawSparkline(canvas, prices) {
   ctx.lineTo(pad, h);
   ctx.closePath();
   const grad = ctx.createLinearGradient(0, 0, 0, h);
-  grad.addColorStop(0, up ? 'rgba(63,185,80,0.25)' : 'rgba(248,81,73,0.25)');
+  grad.addColorStop(0, up ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)');
   grad.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = grad;
   ctx.fill();
@@ -395,6 +510,8 @@ function getFilteredAndSortedMetrics(metrics) {
   let out = [...metrics];
   const q = (symbolSearchEl?.value || '').trim().toUpperCase();
   if (q) out = out.filter((m) => m.product_id.toUpperCase().includes(q));
+  if (directionFilter === 'up') out = out.filter((m) => m.price_change_pct > 0);
+  else if (directionFilter === 'down') out = out.filter((m) => m.price_change_pct < 0);
   out.sort((a, b) => {
     const va = a[tableSortKey], vb = b[tableSortKey];
     return tableSortDir * (typeof va === 'string' ? va.localeCompare(vb) : (va ?? 0) - (vb ?? 0));
@@ -409,20 +526,29 @@ function renderMetricsTable(metrics) {
   metricsCache = metrics || [];
   const displayed = getFilteredAndSortedMetrics(metricsCache);
   if (!displayed.length) {
-    metricsBodyEl.innerHTML = '<tr><td colspan="8">No data yet' + (symbolSearchEl?.value?.trim() ? ' (no match)' : '') + '</td></tr>';
+    const searchActive = symbolSearchEl?.value?.trim() || directionFilter !== 'all';
+    metricsBodyEl.innerHTML = searchActive
+      ? '<tr class="empty-row"><td colspan="8"><div class="empty-state"><span class="empty-state-icon">🔍</span><div class="empty-state-title">No symbols match your filter</div><div class="empty-state-desc">Try a different search term or direction filter</div></div></td></tr>'
+      : '<tr class="empty-row"><td colspan="8"><div class="empty-state"><span class="empty-state-icon">📊</span><div class="empty-state-title">Waiting for trades…</div><div class="empty-state-desc">Start the producer to see live metrics. Data appears as trades stream in.</div></div></td></tr>';
     return;
   }
   metricsBodyEl.innerHTML = displayed.map((m) => {
     const cls = changeClass(m.price_change_pct);
     const arrow = changeArrow(m.price_change_pct);
+    const isFav = favorites.includes(m.product_id);
     return `<tr data-symbol="${m.product_id}">
-      <td>${m.product_id}</td>
+      <td>
+        <div class="symbol-cell">
+          <span class="fav-star ${isFav ? 'active' : ''}" data-symbol="${m.product_id}" title="Toggle watchlist">★</span>
+          <span class="symbol-badge">${m.product_id}</span>
+        </div>
+      </td>
       <td class="sparkline-cell"><canvas data-symbol="${m.product_id}"></canvas></td>
       <td class="${cls}">${arrow} ${Math.abs(m.price_change_pct).toFixed(2)}%</td>
       <td>${fmt(m.trade_count)}</td>
-      <td>${m.avg_price_usd.toFixed(2)}</td>
-      <td>${m.vwap_usd.toFixed(2)}</td>
-      <td>${m.volatility_usd.toFixed(2)}</td>
+      <td>${fmtUsd(m.avg_price_usd)}</td>
+      <td>${fmtUsd(m.vwap_usd)}</td>
+      <td>${fmtUsd(m.volatility_usd)}</td>
       <td>${fmtVol(m.total_volume_qty)}</td>
     </tr>`;
   }).join('');
@@ -430,6 +556,13 @@ function renderMetricsTable(metrics) {
   requestAnimationFrame(() => {
     metricsBodyEl.querySelectorAll('.sparkline-cell canvas').forEach((cvs) => {
       drawSparkline(cvs, sparklinesCache[cvs.dataset.symbol]);
+    });
+  });
+
+  metricsBodyEl.querySelectorAll('.fav-star').forEach((star) => {
+    star.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleFavorite(star.dataset.symbol);
     });
   });
 
@@ -449,8 +582,8 @@ function renderAlerts(alerts) {
   if (!alerts?.length) { alertsSectionEl.style.display = 'none'; return; }
   alertsSectionEl.style.display = 'block';
   alertsEl.innerHTML = alerts.map((a) =>
-    `<div class="alert"><span class="alert-icon">⚡</span> ${a.product_id}: volume ${a.current_volume.toFixed(4)} ` +
-    `(baseline ${a.baseline_volume.toFixed(4)}, ${a.spike_ratio}x)</div>`
+    `<div class="alert"><span class="alert-icon">⚡</span> <strong>${a.product_id}</strong>: volume ${a.current_volume.toFixed(4)} ` +
+    `(baseline ${a.baseline_volume.toFixed(4)}, <strong>${a.spike_ratio}x</strong>)</div>`
   ).join('');
   notifyAlerts(alerts);
 }
@@ -463,7 +596,7 @@ function renderPriceAlerts(priceAlerts) {
   }
   priceAlertsSectionEl.style.display = 'block';
   priceAlertsEl.innerHTML = priceAlerts.map((a) =>
-    `<div class="alert alert-price"><span class="alert-icon">💰</span> ${a.product_id}: ` +
+    `<div class="alert alert-price"><span class="alert-icon">💰</span> <strong>${a.product_id}</strong>: ` +
     `$${a.current_price.toLocaleString()} ${a.direction === 'above' ? '≥' : '≤'} $${a.threshold_price.toLocaleString()}</div>`
   ).join('');
 }
@@ -476,8 +609,8 @@ function renderAnomalyAlerts(anomalies) {
   }
   anomalyAlertsSectionEl.style.display = 'block';
   anomalyAlertsEl.innerHTML = anomalies.map((a) =>
-    `<div class="alert alert-anomaly"><span class="alert-icon">🔮</span> ${a.product_id}: ` +
-    `anomaly score ${a.anomaly_score} | trades ${a.trade_count} | vol $${a.volatility_usd?.toFixed(2) ?? '-'} | ` +
+    `<div class="alert alert-anomaly"><span class="alert-icon">🔮</span> <strong>${a.product_id}</strong>: ` +
+    `score ${a.anomaly_score} · trades ${a.trade_count} · vol $${a.volatility_usd?.toFixed(2) ?? '-'} · ` +
     `change ${a.price_change_pct >= 0 ? '+' : ''}${a.price_change_pct?.toFixed(2) ?? '-'}%</div>`
   ).join('');
 }
@@ -509,13 +642,13 @@ function hexToRgb(hex) {
 function getThemeColors() {
   const light = document.documentElement.getAttribute('data-theme') === 'light';
   return {
-    text: light ? '#656d76' : '#8b949e',
-    grid: light ? 'rgba(0,0,0,0.08)' : 'rgba(48,54,61,0.3)',
-    gridStrong: light ? 'rgba(0,0,0,0.12)' : 'rgba(48,54,61,0.5)',
-    tooltipBg: light ? 'rgba(255,255,255,0.95)' : 'rgba(22,27,34,0.95)',
-    tooltipTitle: light ? '#1f2328' : '#e6edf3',
-    tooltipBody: light ? '#656d76' : '#8b949e',
-    tooltipBorder: light ? '#d0d7de' : '#30363d',
+    text: '#64748b',
+    grid: light ? 'rgba(0,0,0,0.06)' : 'rgba(55,65,81,0.3)',
+    gridStrong: light ? 'rgba(0,0,0,0.1)' : 'rgba(55,65,81,0.5)',
+    tooltipBg: light ? 'rgba(255,255,255,0.96)' : 'rgba(17,24,39,0.96)',
+    tooltipTitle: light ? '#0f172a' : '#f1f5f9',
+    tooltipBody: light ? '#64748b' : '#94a3b8',
+    tooltipBorder: light ? '#e2e8f0' : '#374151',
   };
 }
 
@@ -526,18 +659,21 @@ function updateBarChart(metrics) {
   const labels = metrics.map((m) => m.product_id);
   const prices = metrics.map((m) => m.avg_price_usd);
   const trades = metrics.map((m) => m.trade_count);
-  const priceColors = metrics.map((m) => m.price_change_pct >= 0 ? 'rgba(88, 166, 255, 0.7)' : 'rgba(248, 81, 73, 0.7)');
+  const priceColors = metrics.map((m) => m.price_change_pct >= 0 ? 'rgba(59, 130, 246, 0.75)' : 'rgba(239, 68, 68, 0.75)');
 
   if (!barChart) {
     barChart = new Chart(ctx, {
       type: 'bar',
       data: { labels, datasets: [
-        { label: 'Avg Price (USD)', data: prices, backgroundColor: priceColors, yAxisID: 'y', borderRadius: 4 },
-        { label: 'Trade Count', data: trades, backgroundColor: 'rgba(63, 185, 80, 0.6)', yAxisID: 'y1', borderRadius: 4 },
+        { label: 'Avg Price (USD)', data: prices, backgroundColor: priceColors, yAxisID: 'y', borderRadius: 6, borderSkipped: false },
+        { label: 'Trade Count', data: trades, backgroundColor: 'rgba(34, 197, 94, 0.6)', yAxisID: 'y1', borderRadius: 6, borderSkipped: false },
       ]},
       options: {
         responsive: true, maintainAspectRatio: true,
-        plugins: { legend: { labels: { color: tc.text } } },
+        plugins: {
+          legend: { labels: { color: tc.text, usePointStyle: true, pointStyle: 'rectRounded', padding: 16 } },
+          tooltip: { backgroundColor: tc.tooltipBg, titleColor: tc.tooltipTitle, bodyColor: tc.tooltipBody, borderColor: tc.tooltipBorder, borderWidth: 1, cornerRadius: 8, padding: 10 },
+        },
         scales: {
           x: { ticks: { color: tc.text }, grid: { color: tc.gridStrong } },
           y: {
@@ -563,11 +699,11 @@ function updateBarChart(metrics) {
 
 function renderTicker(recentTrades) {
   if (!tickerTrackEl || !tickerSectionEl) return;
+  tickerSectionEl.style.display = 'block';
   if (!recentTrades?.length) {
-    tickerSectionEl.style.display = 'none';
+    tickerTrackEl.innerHTML = '<div class="empty-state"><span class="empty-state-icon">⏳</span><div class="empty-state-title">No recent trades yet</div><div class="empty-state-desc">Trades appear here as they stream in</div></div>';
     return;
   }
-  tickerSectionEl.style.display = 'block';
   tickerTrackEl.innerHTML = recentTrades.map((t) =>
     `<span class="ticker-item"><span class="ticker-symbol">${t.product_id}</span> ` +
     `$${t.price_usd.toLocaleString()} <span class="ticker-size">×${fmtVol(t.size_qty)}</span> ` +
@@ -581,16 +717,19 @@ function updateVolatilityChart(metrics) {
   if (!metrics?.length) { if (volatilityChart) volatilityChart.data.datasets = []; return; }
   const labels = metrics.map((m) => m.product_id);
   const vols = metrics.map((m) => Math.max(0.01, m.volatility_usd ?? 0));
-  const colors = metrics.map((m) => m.price_change_pct >= 0 ? 'rgba(63, 185, 80, 0.7)' : 'rgba(248, 81, 73, 0.7)');
+  const colors = metrics.map((_, i) => CHART_COLORS[i % CHART_COLORS.length] + 'bb');
 
   if (!volatilityChart) {
     volatilityChart = new Chart(ctx, {
       type: 'bar',
-      data: { labels, datasets: [{ label: 'Volatility (USD)', data: vols, backgroundColor: colors, borderRadius: 4 }] },
+      data: { labels, datasets: [{ label: 'Volatility (USD)', data: vols, backgroundColor: colors, borderRadius: 6, borderSkipped: false }] },
       options: {
         indexAxis: 'y',
         responsive: true, maintainAspectRatio: true,
-        plugins: { legend: { display: false } },
+        plugins: {
+          legend: { display: false },
+          tooltip: { backgroundColor: tc.tooltipBg, titleColor: tc.tooltipTitle, bodyColor: tc.tooltipBody, borderColor: tc.tooltipBorder, borderWidth: 1, cornerRadius: 8 },
+        },
         scales: {
           x: {
             type: 'logarithmic',
@@ -626,14 +765,18 @@ function updateVolumeChart(volumeTs) {
           label: 'Total Volume',
           data: volumes,
           borderColor: CHART_COLORS[2],
-          backgroundColor: 'rgba(210, 153, 34, 0.15)',
-          fill: true, tension: 0.3, pointRadius: 0, pointHitRadius: 6,
+          backgroundColor: 'rgba(234, 179, 8, 0.1)',
+          fill: true, tension: 0.4, pointRadius: 0, pointHitRadius: 6,
+          borderWidth: 2,
         }],
       },
       plugins: [gradientFillPlugin],
       options: {
         responsive: true, maintainAspectRatio: true,
-        plugins: { legend: { display: false } },
+        plugins: {
+          legend: { display: false },
+          tooltip: { backgroundColor: tc.tooltipBg, titleColor: tc.tooltipTitle, bodyColor: tc.tooltipBody, borderColor: tc.tooltipBorder, borderWidth: 1, cornerRadius: 8 },
+        },
         scales: {
           x: { ticks: { color: tc.text, maxTicksLimit: 8 }, grid: { color: tc.grid } },
           y: { ticks: { color: tc.text }, grid: { color: tc.grid } },
@@ -676,8 +819,9 @@ function updateExchangeChart(exchangeMetrics) {
       const v = bySymbol[s]?.[ex];
       return v != null ? Math.max(0.01, v) : null;
     }),
-    backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
-    borderRadius: 4,
+    backgroundColor: CHART_COLORS[i % CHART_COLORS.length] + 'bb',
+    borderRadius: 6,
+    borderSkipped: false,
   }));
 
   if (!exchangeChart) {
@@ -686,7 +830,10 @@ function updateExchangeChart(exchangeMetrics) {
       data: { labels: symbols, datasets },
       options: {
         responsive: true, maintainAspectRatio: true,
-        plugins: { legend: { labels: { color: tc.text } } },
+        plugins: {
+          legend: { labels: { color: tc.text, usePointStyle: true, pointStyle: 'rectRounded', padding: 16 } },
+          tooltip: { backgroundColor: tc.tooltipBg, titleColor: tc.tooltipTitle, bodyColor: tc.tooltipBody, borderColor: tc.tooltipBorder, borderWidth: 1, cornerRadius: 8 },
+        },
         scales: {
           x: { ticks: { color: tc.text }, grid: { color: tc.gridStrong } },
           y: {
@@ -733,18 +880,18 @@ function updateHeatmap(heatmapData) {
   const range = Math.max(Math.abs(minVal), Math.abs(maxVal), 0.01);
 
   function colorFor(val) {
-    if (val == null) return 'rgba(128,128,128,0.3)';
+    if (val == null) return 'rgba(128,128,128,0.2)';
     const t = (val + range) / (2 * range);
     if (t >= 0.5) {
       const g = Math.round(63 + (1 - t) * 2 * 192);
-      return `rgb(63, ${g}, 80)`;
+      return `rgb(34, ${g}, 94)`;
     }
-    const r = Math.round(248 - t * 2 * 167);
-    return `rgb(${r}, 81, 73)`;
+    const r = Math.round(239 - t * 2 * 160);
+    return `rgb(${r}, 68, 68)`;
   }
 
   ctx.clearRect(0, 0, w, h);
-  ctx.font = '10px sans-serif';
+  ctx.font = '10px "Inter", sans-serif';
   ctx.textAlign = 'right';
   ctx.fillStyle = getThemeColors().text;
   labels.forEach((lbl, i) => {
@@ -757,16 +904,32 @@ function updateHeatmap(heatmapData) {
   matrix.forEach((row, ri) => {
     row.forEach((val, ci) => {
       ctx.fillStyle = colorFor(val);
-      ctx.fillRect(labelW + ci * cellW + 1, labelH + ri * cellH + 1, cellW - 2, cellH - 2);
+      const x = labelW + ci * cellW + 1;
+      const y = labelH + ri * cellH + 1;
+      const cw = cellW - 2;
+      const ch = cellH - 2;
+      const r = 3;
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + cw - r, y);
+      ctx.quadraticCurveTo(x + cw, y, x + cw, y + r);
+      ctx.lineTo(x + cw, y + ch - r);
+      ctx.quadraticCurveTo(x + cw, y + ch, x + cw - r, y + ch);
+      ctx.lineTo(x + r, y + ch);
+      ctx.quadraticCurveTo(x, y + ch, x, y + ch - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+      ctx.fill();
       if (val != null && cellW > 24) {
-        ctx.fillStyle = document.documentElement.getAttribute('data-theme') === 'light' ? '#1f2328' : '#e6edf3';
-        ctx.font = '9px sans-serif';
+        ctx.fillStyle = '#f1f5f9';
+        ctx.font = '9px "Inter", sans-serif';
         ctx.fillText(val.toFixed(1) + '%', labelW + ci * cellW + cellW / 2, labelH + ri * cellH + cellH / 2 + 3);
       }
     });
   });
   if (legendEl) {
-    legendEl.innerHTML = `<span style="color:#3fb950">▲ +${range.toFixed(1)}%</span> &nbsp; <span style="color:#f85149">▼ -${range.toFixed(1)}%</span>`;
+    legendEl.innerHTML = `<span style="color:var(--accent-green)">▲ +${range.toFixed(1)}%</span> &nbsp; <span style="color:var(--accent-red)">▼ -${range.toFixed(1)}%</span>`;
   }
 }
 
@@ -794,10 +957,11 @@ function updateRadarChart(metrics) {
       (Math.abs(m.price_change_pct) / maxChange) * 100,
     ],
     borderColor: CHART_COLORS[i % CHART_COLORS.length],
-    backgroundColor: CHART_COLORS[i % CHART_COLORS.length].replace(')', ', 0.2)').replace('rgb', 'rgba'),
+    backgroundColor: CHART_COLORS[i % CHART_COLORS.length] + '22',
     pointBackgroundColor: CHART_COLORS[i % CHART_COLORS.length],
-    pointBorderColor: '#fff',
+    pointBorderColor: 'transparent',
     pointHoverBackgroundColor: '#fff',
+    borderWidth: 2,
   }));
 
   if (!radarChart) {
@@ -810,9 +974,9 @@ function updateRadarChart(metrics) {
       options: {
         responsive: true,
         maintainAspectRatio: true,
-        plugins: { legend: { labels: { color: tc.text } } },
+        plugins: { legend: { labels: { color: tc.text, usePointStyle: true, padding: 12 } } },
         scales: {
-          r: { ticks: { color: tc.text }, grid: { color: tc.grid }, pointLabels: { color: tc.text } },
+          r: { ticks: { color: tc.text, backdropColor: 'transparent' }, grid: { color: tc.grid }, pointLabels: { color: tc.text, font: { weight: 600 } } },
         },
       },
     });
@@ -829,9 +993,8 @@ function updateBubbleChart(metrics) {
     if (bubbleChart) { bubbleChart.data.datasets = []; bubbleChart.update(); }
     return;
   }
-  const maxVol = Math.max(...metrics.map((m) => m.total_volume_qty), 1);
   const maxVolatility = Math.max(...metrics.map((m) => m.volatility_usd), 1);
-  const data = metrics.map((m, i) => ({
+  const data = metrics.map((m) => ({
     x: m.avg_price_usd,
     y: m.total_volume_qty,
     r: Math.max(8, Math.min(35, (m.volatility_usd / maxVolatility) * 30)),
@@ -845,11 +1008,9 @@ function updateBubbleChart(metrics) {
         datasets: [{
           label: 'Symbols',
           data,
-          backgroundColor: metrics.map((m) =>
-            (m.price_change_pct >= 0 ? 'rgba(63, 185, 80, 0.6)' : 'rgba(248, 81, 73, 0.6)')
-          ),
-          borderColor: metrics.map((m) => (m.price_change_pct >= 0 ? '#3fb950' : '#f85149')),
-          borderWidth: 1,
+          backgroundColor: metrics.map((_, i) => CHART_COLORS[i % CHART_COLORS.length] + '88'),
+          borderColor: metrics.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]),
+          borderWidth: 2,
         }],
       },
       options: {
@@ -870,7 +1031,7 @@ function updateBubbleChart(metrics) {
                 return d.product_id ? [`${d.product_id}`, `Price: $${d.x.toLocaleString()}`, `Vol: ${fmtVol(d.y)}`, `Volatility: $${m?.volatility_usd?.toFixed(2) ?? '-'}`] : [];
               },
             },
-            backgroundColor: tc.tooltipBg, titleColor: tc.tooltipTitle, bodyColor: tc.tooltipBody, borderColor: tc.tooltipBorder, borderWidth: 1,
+            backgroundColor: tc.tooltipBg, titleColor: tc.tooltipTitle, bodyColor: tc.tooltipBody, borderColor: tc.tooltipBorder, borderWidth: 1, cornerRadius: 8,
           },
         },
         scales: {
@@ -881,10 +1042,8 @@ function updateBubbleChart(metrics) {
     });
   } else {
     bubbleChart.data.datasets[0].data = data;
-    bubbleChart.data.datasets[0].backgroundColor = metrics.map((m) =>
-      (m.price_change_pct >= 0 ? 'rgba(63, 185, 80, 0.6)' : 'rgba(248, 81, 73, 0.6)')
-    );
-    bubbleChart.data.datasets[0].borderColor = metrics.map((m) => (m.price_change_pct >= 0 ? '#3fb950' : '#f85149'));
+    bubbleChart.data.datasets[0].backgroundColor = metrics.map((_, i) => CHART_COLORS[i % CHART_COLORS.length] + '88');
+    bubbleChart.data.datasets[0].borderColor = metrics.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]);
   }
   bubbleChart.update();
 }
@@ -913,11 +1072,12 @@ function updateStackedVolumeChart(volumeByExchangeTs) {
   const datasets = exchangesList.map((ex, i) => ({
     label: ex,
     data: labels.map((t) => byTime[t]?.[ex] ?? 0),
-    backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
+    backgroundColor: CHART_COLORS[i % CHART_COLORS.length] + '66',
     borderColor: CHART_COLORS[i % CHART_COLORS.length],
     fill: true,
-    tension: 0.3,
+    tension: 0.4,
     pointRadius: 0,
+    borderWidth: 2,
   }));
 
   if (!stackedVolumeChart) {
@@ -928,7 +1088,10 @@ function updateStackedVolumeChart(volumeByExchangeTs) {
         responsive: true,
         maintainAspectRatio: true,
         interaction: { mode: 'index', intersect: false },
-        plugins: { legend: { labels: { color: tc.text } } },
+        plugins: {
+          legend: { labels: { color: tc.text, usePointStyle: true, padding: 16 } },
+          tooltip: { backgroundColor: tc.tooltipBg, titleColor: tc.tooltipTitle, bodyColor: tc.tooltipBody, borderColor: tc.tooltipBorder, borderWidth: 1, cornerRadius: 8 },
+        },
         scales: {
           x: { stacked: true, ticks: { color: tc.text, maxTicksLimit: 8 }, grid: { color: tc.grid } },
           y: { stacked: true, ticks: { color: tc.text }, grid: { color: tc.grid } },
@@ -949,17 +1112,20 @@ function updateDonutChart(metrics) {
   const labels = metrics.map((m) => m.product_id);
   const volumes = metrics.map((m) => m.total_volume_qty);
   const colors = metrics.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]);
-  const borderCol = document.documentElement.getAttribute('data-theme') === 'light' ? '#ffffff' : '#21262d';
+  const borderCol = document.documentElement.getAttribute('data-theme') === 'light' ? '#ffffff' : '#111827';
 
   if (!donutChart) {
     donutChart = new Chart(ctx, {
       type: 'doughnut',
-      data: { labels, datasets: [{ data: volumes, backgroundColor: colors, borderColor: borderCol, borderWidth: 2, hoverOffset: 6 }] },
+      data: { labels, datasets: [{ data: volumes, backgroundColor: colors, borderColor: borderCol, borderWidth: 2, hoverOffset: 8 }] },
       options: {
-        responsive: true, maintainAspectRatio: true, cutout: '60%',
+        responsive: true, maintainAspectRatio: true, cutout: '65%',
         plugins: {
-          legend: { position: 'right', labels: { color: tc.text, boxWidth: 12, padding: 10, font: { size: 11 } } },
-          tooltip: { callbacks: { label: (c) => { const t = c.dataset.data.reduce((a, b) => a + b, 0); return ` ${c.label}: ${fmtVol(c.parsed)} (${t > 0 ? ((c.parsed / t) * 100).toFixed(1) : 0}%)`; } } },
+          legend: { position: 'right', labels: { color: tc.text, boxWidth: 14, padding: 12, font: { size: 11 }, usePointStyle: true, pointStyle: 'circle' } },
+          tooltip: {
+            callbacks: { label: (c) => { const t = c.dataset.data.reduce((a, b) => a + b, 0); return ` ${c.label}: ${fmtVol(c.parsed)} (${t > 0 ? ((c.parsed / t) * 100).toFixed(1) : 0}%)`; } },
+            backgroundColor: tc.tooltipBg, titleColor: tc.tooltipTitle, bodyColor: tc.tooltipBody, borderColor: tc.tooltipBorder, borderWidth: 1, cornerRadius: 8,
+          },
         },
       },
     });
@@ -986,7 +1152,7 @@ function pivotTimeseries(timeseries, selectedSymbols = null) {
   return { labels, datasets: show.map((p, i) => ({
     label: p, data: labels.map((t) => byTime[t]?.[p] ?? null),
     borderColor: CHART_COLORS[i % CHART_COLORS.length], backgroundColor: 'transparent',
-    tension: 0.3, pointRadius: 0, pointHitRadius: 6, fill: true,
+    tension: 0.4, pointRadius: 0, pointHitRadius: 6, fill: true, borderWidth: 2,
   }))};
 }
 
@@ -1017,7 +1183,7 @@ const gradientFillPlugin = {
         if (!meta.visible || meta.hidden) return;
         const grad = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
         const rgb = hexToRgb(ds.borderColor);
-        grad.addColorStop(0, `rgba(${rgb}, 0.18)`);
+        grad.addColorStop(0, `rgba(${rgb}, 0.15)`);
         grad.addColorStop(1, `rgba(${rgb}, 0.0)`);
         ds.backgroundColor = grad;
       }
@@ -1045,8 +1211,8 @@ function updateLineChart(timeseries) {
         responsive: true, maintainAspectRatio: true,
         interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { labels: { color: tc.text } },
-          tooltip: { mode: 'index', intersect: false, backgroundColor: tc.tooltipBg, titleColor: tc.tooltipTitle, bodyColor: tc.tooltipBody, borderColor: tc.tooltipBorder, borderWidth: 1 },
+          legend: { labels: { color: tc.text, usePointStyle: true, padding: 12 } },
+          tooltip: { mode: 'index', intersect: false, backgroundColor: tc.tooltipBg, titleColor: tc.tooltipTitle, bodyColor: tc.tooltipBody, borderColor: tc.tooltipBorder, borderWidth: 1, cornerRadius: 8 },
         },
         scales: {
           x: { ticks: { color: tc.text, maxTicksLimit: 10 }, grid: { color: tc.grid } },
@@ -1079,7 +1245,7 @@ const candlestickPlugin = {
       const hY = y.getPixelForValue(c.high);
       const lY = y.getPixelForValue(c.low);
       const bullish = c.close >= c.open;
-      const color = bullish ? '#3fb950' : '#f85149';
+      const color = bullish ? '#22c55e' : '#ef4444';
 
       ctx.beginPath();
       ctx.moveTo(cx, hY);
@@ -1091,7 +1257,20 @@ const candlestickPlugin = {
       const top = Math.min(oY, cY);
       const bodyH = Math.max(1, Math.abs(oY - cY));
       ctx.fillStyle = color;
-      ctx.fillRect(cx - barWidth / 2, top, barWidth, bodyH);
+      ctx.beginPath();
+      const r = Math.min(2, barWidth / 4);
+      const bx = cx - barWidth / 2;
+      ctx.moveTo(bx + r, top);
+      ctx.lineTo(bx + barWidth - r, top);
+      ctx.quadraticCurveTo(bx + barWidth, top, bx + barWidth, top + r);
+      ctx.lineTo(bx + barWidth, top + bodyH - r);
+      ctx.quadraticCurveTo(bx + barWidth, top + bodyH, bx + barWidth - r, top + bodyH);
+      ctx.lineTo(bx + r, top + bodyH);
+      ctx.quadraticCurveTo(bx, top + bodyH, bx, top + bodyH - r);
+      ctx.lineTo(bx, top + r);
+      ctx.quadraticCurveTo(bx, top, bx + r, top);
+      ctx.closePath();
+      ctx.fill();
     });
   },
 };
@@ -1137,13 +1316,13 @@ async function drawCandlestickChart(symbol, color) {
         legend: { display: false },
         tooltip: {
           callbacks: {
-            label: (ctx) => {
-              const c = candles[ctx.dataIndex];
-              if (!c) return '';
-              return [`O: $${c.open}  H: $${c.high}`, `L: $${c.low}  C: $${c.close}`, `Vol: ${fmtVol(c.volume)}`];
+            label: (c) => {
+              const cd = candles[c.dataIndex];
+              if (!cd) return '';
+              return [`O: $${cd.open}  H: $${cd.high}`, `L: $${cd.low}  C: $${cd.close}`, `Vol: ${fmtVol(cd.volume)}`];
             },
           },
-          backgroundColor: tc.tooltipBg, titleColor: tc.tooltipTitle, bodyColor: tc.tooltipBody, borderColor: tc.tooltipBorder, borderWidth: 1,
+          backgroundColor: tc.tooltipBg, titleColor: tc.tooltipTitle, bodyColor: tc.tooltipBody, borderColor: tc.tooltipBorder, borderWidth: 1, cornerRadius: 8,
         },
       },
       scales: {
@@ -1164,11 +1343,14 @@ function drawLineModalChart(symbol, color) {
 
   modalChart = new Chart(ctx, {
     type: 'line',
-    data: { labels, datasets: [{ label: `${symbol} Price`, data: prices, borderColor: color, backgroundColor: 'transparent', tension: 0.3, pointRadius: 2, pointHitRadius: 8, fill: true }] },
+    data: { labels, datasets: [{ label: `${symbol} Price`, data: prices, borderColor: color, backgroundColor: 'transparent', tension: 0.4, pointRadius: 2, pointHitRadius: 8, fill: true, borderWidth: 2 }] },
     plugins: [gradientFillPlugin],
     options: {
       responsive: true, maintainAspectRatio: true,
-      plugins: { legend: { display: false }, tooltip: { backgroundColor: tc.tooltipBg, titleColor: tc.tooltipTitle, bodyColor: tc.tooltipBody, borderColor: tc.tooltipBorder, borderWidth: 1 } },
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor: tc.tooltipBg, titleColor: tc.tooltipTitle, bodyColor: tc.tooltipBody, borderColor: tc.tooltipBorder, borderWidth: 1, cornerRadius: 8 },
+      },
       scales: {
         x: { ticks: { color: tc.text, maxTicksLimit: 8 }, grid: { color: tc.grid } },
         y: { ticks: { color: tc.text }, grid: { color: tc.grid } },
@@ -1198,7 +1380,7 @@ async function openModal(symbol) {
     ].map(([l, v]) => `<div class="modal-stat"><div class="modal-stat-label">${l}</div><div class="modal-stat-value">${v}</div></div>`).join('');
   }
 
-  const color = CHART_COLORS[metricsCache.findIndex((r) => r.product_id === symbol) % CHART_COLORS.length] || '#58a6ff';
+  const color = CHART_COLORS[metricsCache.findIndex((r) => r.product_id === symbol) % CHART_COLORS.length] || '#3b82f6';
 
   document.querySelectorAll('.modal-chart-btn').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.chartType === currentModalChartType);
@@ -1221,7 +1403,6 @@ function closeModal() {
 
 el('modalClose').addEventListener('click', closeModal);
 el('modalOverlay').addEventListener('click', (e) => { if (e.target === el('modalOverlay')) closeModal(); });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
 document.querySelectorAll('.modal-chart-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
@@ -1229,6 +1410,120 @@ document.querySelectorAll('.modal-chart-btn').forEach((btn) => {
     document.querySelectorAll('.modal-chart-btn').forEach((b) => b.classList.toggle('active', b === btn));
     if (currentModalSymbol) openModal(currentModalSymbol);
   });
+});
+
+// ─── Fullscreen Chart ───────────────────────────────────────────────
+
+let fullscreenChart = null;
+
+function openFullscreen(chartId) {
+  const overlay = el('fullscreenOverlay');
+  const container = document.querySelector(`[data-chart-id="${chartId}"]`);
+  if (!container || !overlay) return;
+
+  const title = container.querySelector('h3')?.textContent || 'Chart';
+  el('fullscreenTitle').textContent = title;
+
+  const sourceCanvas = container.querySelector('canvas');
+  if (!sourceCanvas) return;
+
+  overlay.classList.add('open');
+
+  requestAnimationFrame(() => {
+    const fsCanvas = el('fullscreenCanvas');
+    const fsCtx = fsCanvas.getContext('2d');
+    const chartInstance = Chart.getChart(sourceCanvas);
+    if (!chartInstance) return;
+
+    const cfg = JSON.parse(JSON.stringify(chartInstance.config));
+    cfg.options.maintainAspectRatio = false;
+    cfg.options.responsive = true;
+
+    if (chartInstance.config._config?.plugins) {
+      cfg.plugins = chartInstance.config._config.plugins;
+    }
+
+    fullscreenChart = new Chart(fsCtx, cfg);
+  });
+}
+
+function closeFullscreen() {
+  const overlay = el('fullscreenOverlay');
+  overlay.classList.remove('open');
+  if (fullscreenChart) { fullscreenChart.destroy(); fullscreenChart = null; }
+}
+
+el('fullscreenClose')?.addEventListener('click', closeFullscreen);
+
+document.querySelectorAll('.fullscreen-btn').forEach((btn) => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const container = btn.closest('.chart-container');
+    const chartId = container?.dataset.chartId;
+    if (chartId) openFullscreen(chartId);
+  });
+});
+
+// ─── Direction Filter ───────────────────────────────────────────────
+
+document.querySelectorAll('.direction-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.direction-btn').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    directionFilter = btn.dataset.dir;
+    renderMetricsTable(metricsCache);
+  });
+});
+
+// ─── Keyboard Shortcuts ─────────────────────────────────────────────
+
+function toggleShortcutsModal() {
+  const modal = el('shortcutsModal');
+  modal.classList.toggle('open');
+}
+
+el('shortcutsBtn')?.addEventListener('click', toggleShortcutsModal);
+el('shortcutsModal')?.addEventListener('click', (e) => {
+  if (e.target === el('shortcutsModal')) toggleShortcutsModal();
+});
+
+const windowBtnMap = { '1': 0, '2': 1, '3': 2, '4': 3 };
+
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+
+  if (e.key === 'Escape') {
+    if (el('shortcutsModal').classList.contains('open')) { toggleShortcutsModal(); return; }
+    if (el('fullscreenOverlay').classList.contains('open')) { closeFullscreen(); return; }
+    closeModal();
+    return;
+  }
+
+  if (e.key === '?' || (e.shiftKey && e.key === '/')) { toggleShortcutsModal(); return; }
+  if (e.key === '/') { e.preventDefault(); symbolSearchEl?.focus(); return; }
+  if (e.key.toLowerCase() === 'l') { liveToggleEl.checked = !liveToggleEl.checked; liveToggleEl.checked ? startPolling() : stopPolling(); return; }
+  if (e.key.toLowerCase() === 't') { el('themeToggle').click(); return; }
+  if (e.key.toLowerCase() === 'n') { el('notifToggle').click(); return; }
+  if (e.key.toLowerCase() === 'e') { exportCsv(); return; }
+
+  if (windowBtnMap[e.key] !== undefined) {
+    const btns = document.querySelectorAll('.window-btn');
+    const idx = windowBtnMap[e.key];
+    if (btns[idx]) btns[idx].click();
+  }
+});
+
+// ─── Scroll to Top ──────────────────────────────────────────────────
+
+const scrollTopBtn = el('scrollTopBtn');
+
+window.addEventListener('scroll', () => {
+  if (window.scrollY > 400) scrollTopBtn.classList.add('visible');
+  else scrollTopBtn.classList.remove('visible');
+}, { passive: true });
+
+scrollTopBtn?.addEventListener('click', () => {
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 
 // ─── Window selector ────────────────────────────────────────────────
@@ -1252,10 +1547,13 @@ async function refresh() {
     setStatusClass(kafkaStatusEl, 'error');
     return;
   }
+  document.body.classList.remove('loading');
   sparklinesCache = data.sparklines || {};
   renderStatus(data);
   renderExchangeBar(data.exchange_stats);
   renderKPIs(data);
+  renderMarketInsights(data.metrics);
+  renderWatchlist(data.metrics);
   renderTopMovers(data.metrics);
   renderMetricsTable(data.metrics);
   updateSortIndicator();
@@ -1316,6 +1614,28 @@ el('deselectAllSymbols')?.addEventListener('click', () => {
 exchangeFilterEl?.addEventListener('change', () => {
   exchangeFilter = exchangeFilterEl.value || '';
   refresh();
+});
+
+// Collapsible chart sections
+const collapsedSections = JSON.parse(localStorage.getItem('collapsedCharts') || '[]');
+collapsedSections.forEach((id) => {
+  const section = document.querySelector(`.collapsible-section[data-section="${id}"]`);
+  if (section) {
+    section.classList.add('collapsed');
+    section.querySelector('.collapsible-trigger')?.setAttribute('aria-expanded', 'false');
+  }
+});
+
+document.querySelectorAll('.collapsible-trigger').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const section = btn.closest('.collapsible-section');
+    const expanded = !section.classList.toggle('collapsed');
+    btn.setAttribute('aria-expanded', expanded);
+    const ids = Array.from(document.querySelectorAll('.collapsible-section.collapsed'))
+      .map((s) => s.dataset.section)
+      .filter(Boolean);
+    localStorage.setItem('collapsedCharts', JSON.stringify(ids));
+  });
 });
 
 startPolling();

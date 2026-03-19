@@ -3,17 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Crypto Live Metrics</title>
+  <title>CryptoStream — Live Trading Dashboard</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/styles.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
   <script>
     (function(){const t=localStorage.getItem('theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');})();
   </script>
 </head>
-<body>
+<body class="loading">
   <div class="app">
     <header class="header">
-      <h1>Crypto Live Metrics</h1>
+      <div class="header-brand">
+        <div class="header-logo">⚡</div>
+        <h1>CryptoStream</h1>
+      </div>
       <div class="header-controls">
         <label class="toggle">
           <input type="checkbox" id="liveToggle" checked>
@@ -32,66 +39,141 @@
           <button class="window-btn" data-window="5">5m</button>
           <button class="window-btn" data-window="10">10m</button>
         </div>
-        <button class="icon-btn" id="themeToggle" title="Toggle light/dark theme">
+        <button class="icon-btn" id="themeToggle" title="Toggle theme" aria-label="Toggle light/dark theme">
           <span id="themeIcon">☀</span>
         </button>
-        <button class="icon-btn" id="notifToggle" title="Toggle sound & desktop notifications">
+        <button class="icon-btn" id="notifToggle" title="Notifications" aria-label="Toggle notifications">
           <span id="notifIcon">🔔</span>
+        </button>
+        <button class="icon-btn" id="shortcutsBtn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">
+          <span>⌨</span>
         </button>
         <span class="updated-at" id="updatedAt">--:--:-- UTC</span>
       </div>
     </header>
 
     <main class="main">
+      <!-- Status Bar -->
       <section class="status-bar">
         <div class="status-item" id="kafkaStatus">
+          <span class="status-dot"></span>
           <span class="label">Kafka:</span>
           <span class="value">--</span>
         </div>
         <div class="status-item" id="freshnessStatus">
+          <span class="status-dot"></span>
           <span class="label">Data freshness:</span>
           <span class="value">--</span>
         </div>
         <div class="status-item" id="latencyStatus" title="Age of most recent events (pipeline latency)">
+          <span class="status-dot"></span>
           <span class="label">Pipeline latency:</span>
           <span class="value">--</span>
         </div>
       </section>
 
+      <!-- Exchange Bar -->
       <section class="exchange-bar" id="exchangeBar">
-        <span class="exchange-bar-label">Exchanges:</span>
+        <span class="exchange-bar-label">Exchanges</span>
         <div class="exchange-pills" id="exchangePills"></div>
         <select id="exchangeFilter" title="Filter metrics by exchange" class="exchange-filter-select">
           <option value="">All exchanges</option>
-          <option value="coinbase">Coinbase only</option>
-          <option value="binance">Binance only</option>
-          <option value="kraken">Kraken only</option>
+          <option value="coinbase">Coinbase</option>
+          <option value="binance">Binance</option>
+          <option value="kraken">Kraken</option>
         </select>
       </section>
 
+      <!-- KPI Cards -->
       <section class="kpis">
         <div class="kpi-card" id="kpiTrades">
+          <div class="kpi-icon">📊</div>
           <div class="kpi-label">Total Trades (<span class="kpi-window">1</span>m)</div>
           <div class="kpi-value" id="totalTrades">0</div>
         </div>
         <div class="kpi-card" id="kpiSymbols">
+          <div class="kpi-icon">🪙</div>
           <div class="kpi-label">Live Symbols</div>
           <div class="kpi-value" id="liveSymbols">0</div>
         </div>
         <div class="kpi-card" id="kpiVolume">
+          <div class="kpi-icon">📈</div>
           <div class="kpi-label">Total Volume (<span class="kpi-window">1</span>m)</div>
           <div class="kpi-value" id="totalVolume">0</div>
         </div>
         <div class="kpi-card" id="kpiExchanges">
+          <div class="kpi-icon">🏦</div>
           <div class="kpi-label">Live Exchanges</div>
           <div class="kpi-value" id="liveExchanges">0</div>
         </div>
         <div class="kpi-card" id="kpiFreshness">
+          <div class="kpi-icon">⏱</div>
           <div class="kpi-label">Data Freshness</div>
-          <div class="kpi-value" id="dataFreshness">N/A</div>
+          <div class="kpi-value" id="dataFreshness">—</div>
         </div>
       </section>
 
+      <!-- Market Insights (NEW) -->
+      <section class="market-insights" id="marketInsights">
+        <div class="insight-card">
+          <div class="insight-icon blue">📊</div>
+          <div class="insight-content">
+            <div class="insight-label">Market Direction</div>
+            <div class="insight-value" id="insightDirection">--</div>
+          </div>
+        </div>
+        <div class="insight-card">
+          <div class="insight-icon green">📉</div>
+          <div class="insight-content">
+            <div class="insight-label">Avg Change</div>
+            <div class="insight-value" id="insightAvgChange">--</div>
+          </div>
+        </div>
+        <div class="insight-card">
+          <div class="insight-icon purple">🔥</div>
+          <div class="insight-content">
+            <div class="insight-label">Most Active</div>
+            <div class="insight-value" id="insightMostActive">--</div>
+          </div>
+        </div>
+        <div class="insight-card">
+          <div class="insight-icon yellow">💎</div>
+          <div class="insight-content">
+            <div class="insight-label">Highest Volume</div>
+            <div class="insight-value" id="insightHighVol">--</div>
+          </div>
+        </div>
+        <div class="insight-card">
+          <div class="insight-icon red">🌊</div>
+          <div class="insight-content">
+            <div class="insight-label">Most Volatile</div>
+            <div class="insight-value" id="insightVolatile">--</div>
+          </div>
+        </div>
+        <div class="insight-card">
+          <div class="insight-icon cyan">₿</div>
+          <div class="insight-content">
+            <div class="insight-label">BTC Dominance</div>
+            <div class="insight-value" id="insightBtcDom">--</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Watchlist (NEW) -->
+      <section class="watchlist-section" id="watchlistSection">
+        <div class="section-header">
+          <div class="section-icon" style="background: var(--accent-yellow-dim);">⭐</div>
+          <h2>Watchlist</h2>
+        </div>
+        <div class="watchlist-grid" id="watchlistGrid">
+          <div class="watchlist-empty">
+            <div class="watchlist-empty-icon">⭐</div>
+            <div>Star symbols in the table below to add them to your watchlist</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Top Movers -->
       <section class="top-movers" id="topMoversSection" style="display:none">
         <div class="mover mover-up" id="topGainer">
           <span class="mover-icon">▲</span>
@@ -103,11 +185,20 @@
         </div>
       </section>
 
+      <!-- Metrics Table -->
       <section class="section">
-        <h2>Rolling <span id="tableSummaryWindow">1</span>-Minute Summary</h2>
+        <div class="section-header">
+          <div class="section-icon">📋</div>
+          <h2>Rolling <span id="tableSummaryWindow">1</span>-Minute Summary</h2>
+        </div>
         <div class="table-controls">
-          <input type="search" id="symbolSearch" placeholder="Filter by symbol..." class="search-input">
-          <button class="export-btn" id="exportCsv" title="Download table as CSV">Export CSV</button>
+          <input type="search" id="symbolSearch" placeholder="Search symbols…" class="search-input">
+          <div class="direction-filters">
+            <button class="direction-btn active" data-dir="all">All</button>
+            <button class="direction-btn" data-dir="up">▲ Gainers</button>
+            <button class="direction-btn" data-dir="down">▼ Losers</button>
+          </div>
+          <button class="export-btn" id="exportCsv" title="Download table as CSV">⬇ Export CSV</button>
         </div>
         <div class="table-wrap">
           <table class="metrics-table">
@@ -117,131 +208,245 @@
                 <th>Trend</th>
                 <th class="sortable" data-sort="price_change_pct" data-label="Change">Change</th>
                 <th class="sortable" data-sort="trade_count" data-label="Trades">Trades</th>
-                <th class="sortable" data-sort="avg_price_usd" data-label="Avg Price (USD)">Avg Price (USD)</th>
-                <th class="sortable" data-sort="vwap_usd" data-label="VWAP (USD)" title="Volume-Weighted Average Price">VWAP (USD)</th>
-                <th class="sortable" data-sort="volatility_usd" data-label="Volatility" title="Standard deviation of price in window">Volatility</th>
+                <th class="sortable" data-sort="avg_price_usd" data-label="Avg Price">Avg Price</th>
+                <th class="sortable" data-sort="vwap_usd" data-label="VWAP" title="Volume-Weighted Average Price">VWAP</th>
+                <th class="sortable" data-sort="volatility_usd" data-label="Volatility" title="Std dev of price">Volatility</th>
                 <th class="sortable" data-sort="total_volume_qty" data-label="Volume">Volume</th>
               </tr>
             </thead>
             <tbody id="metricsBody">
+              <tr class="skeleton-row"><td colspan="8"><div class="skeleton-line"></div></td></tr>
+              <tr class="skeleton-row"><td colspan="8"><div class="skeleton-line"></div></td></tr>
+              <tr class="skeleton-row"><td colspan="8"><div class="skeleton-line"></div></td></tr>
+              <tr class="skeleton-row"><td colspan="8"><div class="skeleton-line"></div></td></tr>
+              <tr class="skeleton-row"><td colspan="8"><div class="skeleton-line"></div></td></tr>
             </tbody>
           </table>
         </div>
       </section>
 
+      <!-- Alerts -->
       <section class="section alerts-section" id="alertsSection">
-        <h2>Volume Spike Alerts</h2>
+        <div class="section-header">
+          <div class="section-icon" style="background: var(--accent-yellow-dim);">⚡</div>
+          <h2>Volume Spike Alerts</h2>
+        </div>
         <div class="alerts" id="alerts"></div>
       </section>
 
       <section class="section alerts-section" id="priceAlertsSection">
-        <h2>Price Threshold Alerts</h2>
-        <p class="section-desc">Configure via ALERT_PRICE_THRESHOLDS (e.g. BTC-USD:above:100000,ETH-USD:below:3000)</p>
+        <div class="section-header">
+          <div class="section-icon" style="background: var(--accent-blue-dim);">💰</div>
+          <h2>Price Threshold Alerts</h2>
+        </div>
+        <p class="section-desc">Configured via ALERT_PRICE_THRESHOLDS env var</p>
         <div class="alerts" id="priceAlerts"></div>
       </section>
 
       <section class="section alerts-section" id="anomalyAlertsSection">
-        <h2>ML Anomaly Detection</h2>
-        <p class="section-desc">Isolation Forest detects unusual patterns in trade count, volatility, volume, and price change.</p>
+        <div class="section-header">
+          <div class="section-icon" style="background: var(--accent-purple-dim);">🔮</div>
+          <h2>ML Anomaly Detection</h2>
+        </div>
+        <p class="section-desc">Isolation Forest detecting unusual patterns in trade activity</p>
         <div class="alerts" id="anomalyAlerts"></div>
       </section>
 
+      <!-- Arbitrage -->
       <section class="section arbitrage-section" id="arbitrageSection">
-        <h2>Cross-Exchange Arbitrage Opportunities</h2>
-        <p class="section-desc">Price spread between exchanges exceeds threshold. Buy low, sell high.</p>
+        <div class="section-header">
+          <div class="section-icon" style="background: var(--accent-green-dim);">🔄</div>
+          <h2>Cross-Exchange Arbitrage</h2>
+        </div>
+        <p class="section-desc">Price spread between exchanges exceeds threshold — buy low, sell high</p>
         <div class="arbitrage-list" id="arbitrageList"></div>
       </section>
 
+      <!-- Ticker -->
       <section class="section ticker-section" id="tickerSection">
-        <h3>Recent Trades</h3>
+        <div class="section-header">
+          <div class="section-icon" style="background: var(--accent-cyan, rgba(6,182,212,0.12));">📡</div>
+          <h3>Recent Trades</h3>
+        </div>
         <div class="ticker-wrap" id="tickerWrap">
           <div class="ticker-track" id="tickerTrack"></div>
         </div>
       </section>
 
-      <section class="section charts">
-        <div class="chart-container">
-          <h3>Avg Price & Trade Count by Symbol</h3>
-          <canvas id="barChart"></canvas>
-        </div>
-        <div class="chart-container">
-          <h3>Volume Distribution</h3>
-          <canvas id="donutChart"></canvas>
-        </div>
-      </section>
-
-      <section class="section charts">
-        <div class="chart-container">
-          <h3>Volatility by Symbol</h3>
-          <canvas id="volatilityChart"></canvas>
-        </div>
-        <div class="chart-container">
-          <h3>Volume Over Time</h3>
-          <canvas id="volumeChart"></canvas>
-        </div>
-      </section>
-
-      <section class="section charts">
-        <div class="chart-container">
-          <h3>Price Change Heatmap</h3>
-          <p class="section-desc">% change from window start — green = up, red = down</p>
-          <div class="heatmap-wrap" id="heatmapWrap">
-            <canvas id="heatmapChart"></canvas>
-            <div class="heatmap-legend" id="heatmapLegend"></div>
+      <!-- Charts: Price & Volume -->
+      <section class="section collapsible-section" data-section="charts1">
+        <button class="collapsible-trigger" aria-expanded="true" aria-controls="charts1-body">
+          <span class="collapsible-title">📊 Charts: Price &amp; Volume</span>
+          <span class="collapsible-icon">▼</span>
+        </button>
+        <div class="collapsible-body" id="charts1-body">
+          <div class="charts">
+            <div class="chart-container" data-chart-id="barChart">
+              <div class="chart-header">
+                <h3>Avg Price & Trade Count</h3>
+                <button class="fullscreen-btn" title="Fullscreen">⛶</button>
+              </div>
+              <canvas id="barChart"></canvas>
+            </div>
+            <div class="chart-container" data-chart-id="donutChart">
+              <div class="chart-header">
+                <h3>Volume Distribution</h3>
+                <button class="fullscreen-btn" title="Fullscreen">⛶</button>
+              </div>
+              <canvas id="donutChart"></canvas>
+            </div>
           </div>
         </div>
-        <div class="chart-container">
-          <h3>Symbol Radar</h3>
-          <p class="section-desc">Multi-metric comparison (top 5 by volume)</p>
-          <canvas id="radarChart"></canvas>
-        </div>
       </section>
 
-      <section class="section charts">
-        <div class="chart-container chart-full">
-          <h3>Market Bubble</h3>
-          <p class="section-desc">Price vs Volume — bubble size = volatility</p>
-          <canvas id="bubbleChart"></canvas>
-        </div>
-      </section>
-
-      <section class="section" id="exchangeVolumeSection">
-        <h3>Volume by Exchange Over Time</h3>
-        <p class="section-desc">Stacked volume across exchanges (multi-exchange only)</p>
-        <div class="chart-container chart-full">
-          <canvas id="stackedVolumeChart"></canvas>
-        </div>
-      </section>
-
-      <section class="section" id="exchangeChartSection">
-        <h3>Exchange Price Comparison</h3>
-        <p class="section-desc">Average price per symbol across exchanges (multi-exchange data only)</p>
-        <div class="chart-container chart-full">
-          <canvas id="exchangeChart"></canvas>
-        </div>
-      </section>
-
-      <section class="section">
-        <div class="chart-container chart-full">
-          <h3>Avg Price Trend (30s buckets)</h3>
-          <div class="chart-symbol-filters" id="lineChartFilters">
-            <span class="filter-label">Show:</span>
-            <div class="symbol-checks" id="symbolChecks"></div>
-            <button type="button" class="filter-btn" id="selectAllSymbols">All</button>
-            <button type="button" class="filter-btn" id="deselectAllSymbols">None</button>
+      <!-- Charts: Volatility & Volume Over Time -->
+      <section class="section collapsible-section" data-section="charts2">
+        <button class="collapsible-trigger" aria-expanded="true" aria-controls="charts2-body">
+          <span class="collapsible-title">🌊 Charts: Volatility &amp; Volume Over Time</span>
+          <span class="collapsible-icon">▼</span>
+        </button>
+        <div class="collapsible-body" id="charts2-body">
+          <div class="charts">
+            <div class="chart-container" data-chart-id="volatilityChart">
+              <div class="chart-header">
+                <h3>Volatility by Symbol</h3>
+                <button class="fullscreen-btn" title="Fullscreen">⛶</button>
+              </div>
+              <canvas id="volatilityChart"></canvas>
+            </div>
+            <div class="chart-container" data-chart-id="volumeChart">
+              <div class="chart-header">
+                <h3>Volume Over Time</h3>
+                <button class="fullscreen-btn" title="Fullscreen">⛶</button>
+              </div>
+              <canvas id="volumeChart"></canvas>
+            </div>
           </div>
-          <canvas id="lineChart"></canvas>
+        </div>
+      </section>
+
+      <!-- Charts: Heatmap & Radar -->
+      <section class="section collapsible-section" data-section="charts3">
+        <button class="collapsible-trigger" aria-expanded="true" aria-controls="charts3-body">
+          <span class="collapsible-title">🔥 Charts: Heatmap &amp; Radar</span>
+          <span class="collapsible-icon">▼</span>
+        </button>
+        <div class="collapsible-body" id="charts3-body">
+          <div class="charts">
+            <div class="chart-container" data-chart-id="heatmapChart">
+              <div class="chart-header">
+                <h3>Price Change Heatmap</h3>
+                <button class="fullscreen-btn" title="Fullscreen">⛶</button>
+              </div>
+              <p class="section-desc">% change — green = up, red = down</p>
+              <div class="heatmap-wrap" id="heatmapWrap">
+                <canvas id="heatmapChart"></canvas>
+                <div class="heatmap-legend" id="heatmapLegend"></div>
+              </div>
+            </div>
+            <div class="chart-container" data-chart-id="radarChart">
+              <div class="chart-header">
+                <h3>Symbol Radar</h3>
+                <button class="fullscreen-btn" title="Fullscreen">⛶</button>
+              </div>
+              <p class="section-desc">Multi-metric comparison (top 5 by volume)</p>
+              <canvas id="radarChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Charts: Market Bubble -->
+      <section class="section collapsible-section" data-section="charts4">
+        <button class="collapsible-trigger" aria-expanded="true" aria-controls="charts4-body">
+          <span class="collapsible-title">💎 Charts: Market Bubble</span>
+          <span class="collapsible-icon">▼</span>
+        </button>
+        <div class="collapsible-body" id="charts4-body">
+          <div class="charts">
+            <div class="chart-container chart-full" data-chart-id="bubbleChart">
+              <div class="chart-header">
+                <h3>Market Bubble — Price vs Volume (size = volatility)</h3>
+                <button class="fullscreen-btn" title="Fullscreen">⛶</button>
+              </div>
+              <canvas id="bubbleChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Charts: Volume by Exchange -->
+      <section class="section collapsible-section" data-section="charts5" id="exchangeVolumeSection">
+        <button class="collapsible-trigger" aria-expanded="true" aria-controls="charts5-body">
+          <span class="collapsible-title">🏦 Volume by Exchange Over Time</span>
+          <span class="collapsible-icon">▼</span>
+        </button>
+        <div class="collapsible-body" id="charts5-body">
+          <p class="section-desc">Stacked volume across exchanges (multi-exchange mode)</p>
+          <div class="chart-container chart-full" data-chart-id="stackedVolumeChart">
+            <div class="chart-header">
+              <h3>Exchange Volume</h3>
+              <button class="fullscreen-btn" title="Fullscreen">⛶</button>
+            </div>
+            <canvas id="stackedVolumeChart"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- Charts: Exchange Price Comparison -->
+      <section class="section collapsible-section" data-section="charts6" id="exchangeChartSection">
+        <button class="collapsible-trigger" aria-expanded="true" aria-controls="charts6-body">
+          <span class="collapsible-title">⚖️ Exchange Price Comparison</span>
+          <span class="collapsible-icon">▼</span>
+        </button>
+        <div class="collapsible-body" id="charts6-body">
+          <p class="section-desc">Average price per symbol across exchanges</p>
+          <div class="chart-container chart-full" data-chart-id="exchangeChart">
+            <div class="chart-header">
+              <h3>Price Comparison</h3>
+              <button class="fullscreen-btn" title="Fullscreen">⛶</button>
+            </div>
+            <canvas id="exchangeChart"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- Charts: Avg Price Trend -->
+      <section class="section collapsible-section" data-section="charts7">
+        <button class="collapsible-trigger" aria-expanded="true" aria-controls="charts7-body">
+          <span class="collapsible-title">📈 Avg Price Trend (30s buckets)</span>
+          <span class="collapsible-icon">▼</span>
+        </button>
+        <div class="collapsible-body" id="charts7-body">
+          <div class="chart-container chart-full" data-chart-id="lineChart">
+            <div class="chart-header">
+              <h3>Avg Price Trend</h3>
+              <button class="fullscreen-btn" title="Fullscreen">⛶</button>
+            </div>
+            <div class="chart-symbol-filters" id="lineChartFilters">
+              <span class="filter-label">Show:</span>
+              <div class="symbol-checks" id="symbolChecks"></div>
+              <button type="button" class="filter-btn" id="selectAllSymbols">All</button>
+              <button type="button" class="filter-btn" id="deselectAllSymbols">None</button>
+            </div>
+            <canvas id="lineChart"></canvas>
+          </div>
         </div>
       </section>
 
       <footer class="footer">
-        Window: last <span id="windowMinutes">3</span> minutes. Events tracked: <span id="eventCount">0</span>.
+        <span>Window: last <span id="windowMinutes">3</span> min · Events: <span id="eventCount">0</span></span>
         <a href="/api/docs" class="footer-link">API Docs</a>
+        <span class="footer-shortcut">Press <kbd>?</kbd> for shortcuts</span>
       </footer>
     </main>
   </div>
 
+  <!-- Toast container -->
   <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Scroll to top -->
+  <button class="scroll-top-btn" id="scrollTopBtn" title="Back to top" aria-label="Scroll to top">↑</button>
 
   <!-- Symbol detail modal -->
   <div class="modal-overlay" id="modalOverlay">
@@ -257,6 +462,48 @@
       </div>
       <div class="modal-chart-wrap">
         <canvas id="modalChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fullscreen chart overlay -->
+  <div class="fullscreen-overlay" id="fullscreenOverlay">
+    <div class="fullscreen-header">
+      <h3 id="fullscreenTitle">Chart</h3>
+      <button class="fullscreen-close" id="fullscreenClose">✕ Close <kbd>Esc</kbd></button>
+    </div>
+    <div class="fullscreen-chart-wrap">
+      <canvas id="fullscreenCanvas"></canvas>
+    </div>
+  </div>
+
+  <!-- Keyboard shortcuts modal -->
+  <div class="shortcuts-modal" id="shortcutsModal">
+    <div class="shortcuts-content">
+      <h2>⌨ Keyboard Shortcuts</h2>
+      <div class="shortcut-group">
+        <div class="shortcut-group-title">Navigation</div>
+        <div class="shortcut-row"><span class="shortcut-desc">Focus search</span><span class="shortcut-keys"><kbd>/</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Scroll to top</span><span class="shortcut-keys"><kbd>Home</kbd></span></div>
+      </div>
+      <div class="shortcut-group">
+        <div class="shortcut-group-title">Controls</div>
+        <div class="shortcut-row"><span class="shortcut-desc">Toggle live feed</span><span class="shortcut-keys"><kbd>L</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Toggle theme</span><span class="shortcut-keys"><kbd>T</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Toggle notifications</span><span class="shortcut-keys"><kbd>N</kbd></span></div>
+      </div>
+      <div class="shortcut-group">
+        <div class="shortcut-group-title">Time Windows</div>
+        <div class="shortcut-row"><span class="shortcut-desc">1 minute</span><span class="shortcut-keys"><kbd>1</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">3 minutes</span><span class="shortcut-keys"><kbd>2</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">5 minutes</span><span class="shortcut-keys"><kbd>3</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">10 minutes</span><span class="shortcut-keys"><kbd>4</kbd></span></div>
+      </div>
+      <div class="shortcut-group">
+        <div class="shortcut-group-title">General</div>
+        <div class="shortcut-row"><span class="shortcut-desc">Show shortcuts</span><span class="shortcut-keys"><kbd>?</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Close modal</span><span class="shortcut-keys"><kbd>Esc</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Export CSV</span><span class="shortcut-keys"><kbd>E</kbd></span></div>
       </div>
     </div>
   </div>
