@@ -4,6 +4,7 @@ Consumes Kafka messages in a background thread and exposes REST endpoints.
 """
 
 import json
+import logging
 import sys
 import threading
 import time
@@ -12,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_from_directory
 from kafka import KafkaConsumer
 from prometheus_client import make_wsgi_app
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
@@ -22,6 +23,8 @@ sys.path.append(str(repo_root / "src"))
 from utils.config import get_config
 from utils.alerts import alert_arbitrage, alert_volume_spike, alert_price_threshold, alert_anomaly
 from utils.anomaly import AnomalyDetector
+from utils.context_builder import build_market_context, build_insight_prompt, build_query_prompt
+from utils.llm_service import MLXClient
 from utils.metrics import (
     DASHBOARD_EVENTS,
     DASHBOARD_FRESHNESS_SECONDS,
@@ -30,6 +33,8 @@ from utils.metrics import (
     DASHBOARD_REQUEST_DURATION,
     DASHBOARD_REQUESTS,
 )
+
+log = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder="web", static_url_path="/")
 
@@ -48,6 +53,15 @@ _state = {
     "anomaly_detector": None,
 }
 _state_lock = threading.Lock()
+
+# AI assistant state
+_ai_state = {
+    "client": None,
+    "latest_insight": None,
+    "insight_updated_at": None,
+    "insight_error": None,
+}
+_ai_lock = threading.Lock()
 
 
 @app.before_request
@@ -603,7 +617,10 @@ def _build_dashboard_payload(window_minutes: int, exchange_filter: str) -> dict:
                     contamination=config.anomaly_contamination,
                 )
         detector = _state["anomaly_detector"]
-        anomalies = detector.detect(metrics)
+        try:
+            anomalies = detector.detect(metrics)
+        except Exception:
+            anomalies = []
         for a in anomalies:
             alert_anomaly(
                 config.slack_webhook_url,
@@ -747,10 +764,195 @@ def dashboard():
     return jsonify(_build_dashboard_payload(window_minutes, exchange_filter))
 
 
+# ── AI Assistant Endpoints ────────────────────────────────────────────
+
+
+def _get_mlx_client() -> MLXClient | None:
+    """Lazy-init the MLX LLM client."""
+    with _ai_lock:
+        if _ai_state["client"] is not None:
+            return _ai_state["client"]
+    config = get_config()
+    if not config.ai_enabled:
+        return None
+    client = MLXClient(
+        base_url=config.mlx_server_url,
+        model=config.mlx_model,
+        timeout=config.ai_request_timeout_sec,
+    )
+    with _ai_lock:
+        _ai_state["client"] = client
+    return client
+
+
+def _insight_loop():
+    """Background thread: periodically generate market insight summaries."""
+    config = get_config()
+    if not config.ai_enabled:
+        return
+    interval = config.ai_insight_interval_sec
+
+    # Wait for initial data before first insight
+    time.sleep(min(interval, 30))
+
+    while _state["running"]:
+        try:
+            client = _get_mlx_client()
+            if client is None:
+                time.sleep(interval)
+                continue
+
+            payload = _build_dashboard_payload(WINDOW_MINUTES, "")
+            if not payload.get("metrics"):
+                time.sleep(10)
+                continue
+
+            prompt = build_insight_prompt(payload)
+            insight = client.generate(prompt)
+
+            with _ai_lock:
+                _ai_state["latest_insight"] = insight
+                _ai_state["insight_updated_at"] = datetime.now(timezone.utc).strftime(
+                    "%H:%M:%S UTC"
+                )
+                _ai_state["insight_error"] = None
+        except Exception as exc:
+            log.exception("Insight generation failed")
+            with _ai_lock:
+                _ai_state["insight_error"] = str(exc)
+
+        time.sleep(interval)
+
+
+@app.route("/api/ai/health")
+def ai_health():
+    """Check AI assistant availability."""
+    config = get_config()
+    if not config.ai_enabled:
+        return jsonify({"enabled": False, "status": "disabled"}), 200
+
+    client = _get_mlx_client()
+    if client is None:
+        return jsonify({"enabled": True, "status": "client_init_failed"}), 503
+
+    health = client.health_check()
+    code = 200 if health.get("status") == "ok" else 503
+    return jsonify({"enabled": True, **health}), code
+
+
+@app.route("/api/ai/chat", methods=["POST"])
+def ai_chat():
+    """Conversational AI with live market context. Supports SSE streaming."""
+    config = get_config()
+    if not config.ai_enabled:
+        return jsonify({"error": "AI assistant is disabled"}), 503
+
+    client = _get_mlx_client()
+    if client is None:
+        return jsonify({"error": "AI service unavailable"}), 503
+
+    body = request.get_json(silent=True) or {}
+    user_message = body.get("message", "").strip()
+    if not user_message:
+        return jsonify({"error": "message is required"}), 400
+
+    history = body.get("history", [])
+    stream = body.get("stream", True)
+
+    window = int(body.get("window", WINDOW_MINUTES))
+    window = max(1, min(window, 30))
+    payload = _build_dashboard_payload(window, "")
+    context = build_market_context(payload)
+
+    messages = []
+    for msg in history[-20:]:
+        role = msg.get("role", "user")
+        if role in ("user", "assistant"):
+            messages.append({"role": role, "content": msg.get("content", "")})
+    messages.append({"role": "user", "content": user_message})
+
+    if stream:
+
+        def generate():
+            for chunk in client.chat(messages, context=context, stream=True):
+                yield f"data: {json.dumps({'content': chunk})}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return Response(generate(), mimetype="text/event-stream")
+
+    result = client.chat(messages, context=context, stream=False)
+    return jsonify(result)
+
+
+@app.route("/api/ai/insights")
+def ai_insights():
+    """Return the latest auto-generated market insight summary."""
+    config = get_config()
+    if not config.ai_enabled:
+        return jsonify({"enabled": False}), 200
+
+    with _ai_lock:
+        insight = _ai_state["latest_insight"]
+        updated_at = _ai_state["insight_updated_at"]
+        error = _ai_state["insight_error"]
+
+    return jsonify(
+        {
+            "enabled": True,
+            "insight": insight,
+            "updated_at": updated_at,
+            "error": error,
+        }
+    )
+
+
+@app.route("/api/ai/query", methods=["POST"])
+def ai_query():
+    """Natural-language data query — LLM parses intent and returns structured data."""
+    config = get_config()
+    if not config.ai_enabled:
+        return jsonify({"error": "AI assistant is disabled"}), 503
+
+    client = _get_mlx_client()
+    if client is None:
+        return jsonify({"error": "AI service unavailable"}), 503
+
+    body = request.get_json(silent=True) or {}
+    query = body.get("query", "").strip()
+    if not query:
+        return jsonify({"error": "query is required"}), 400
+
+    window = int(body.get("window", WINDOW_MINUTES))
+    window = max(1, min(window, 30))
+    payload = _build_dashboard_payload(window, "")
+    prompt = build_query_prompt(query, payload)
+
+    raw = client.generate(prompt)
+
+    # Try to parse as JSON; fall back to raw text
+    try:
+        result = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        result = {"answer": raw, "symbols": [], "exchanges": [], "data": []}
+
+    return jsonify(result)
+
+
 def main():
     get_config()  # validate config on startup
     t = threading.Thread(target=_poll_and_ingest, daemon=True)
     t.start()
+
+    config = get_config()
+    if config.ai_enabled:
+        insight_thread = threading.Thread(target=_insight_loop, daemon=True)
+        insight_thread.start()
+        log.info(
+            "AI assistant enabled (model=%s, insight_interval=%ds)",
+            config.mlx_model,
+            config.ai_insight_interval_sec,
+        )
+
     port = int(__import__("os").environ.get("DASHBOARD_PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
 

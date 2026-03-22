@@ -92,10 +92,16 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       KAFKA_TOPIC_RAW: crypto.trades.raw
       DASHBOARD_PORT: 5000
+      MLX_SERVER_URL: http://host.docker.internal:8080
+      MLX_MODEL: mlx-community/Llama-3.2-3B-Instruct-4bit
+      AI_ENABLED: "true"
+      AI_INSIGHT_INTERVAL_SEC: "60"
     ports:
       - "5000:5000"
     networks:

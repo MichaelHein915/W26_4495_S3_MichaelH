@@ -504,7 +504,57 @@
         <div class="shortcut-row"><span class="shortcut-desc">Show shortcuts</span><span class="shortcut-keys"><kbd>?</kbd></span></div>
         <div class="shortcut-row"><span class="shortcut-desc">Close modal</span><span class="shortcut-keys"><kbd>Esc</kbd></span></div>
         <div class="shortcut-row"><span class="shortcut-desc">Export CSV</span><span class="shortcut-keys"><kbd>E</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">AI Assistant</span><span class="shortcut-keys"><kbd>A</kbd></span></div>
       </div>
+    </div>
+  </div>
+
+  <!-- AI Chat Panel -->
+  <button class="ai-chat-fab" id="aiChatFab" title="AI Assistant (A)">
+    <span class="ai-fab-icon">AI</span>
+    <span class="ai-fab-badge" id="aiFabBadge" style="display:none"></span>
+  </button>
+
+  <div class="ai-chat-panel" id="aiChatPanel">
+    <div class="ai-chat-header">
+      <div class="ai-chat-header-left">
+        <span class="ai-chat-logo">AI</span>
+        <div>
+          <div class="ai-chat-title">CryptoStream AI</div>
+          <div class="ai-chat-status" id="aiStatus">Connecting...</div>
+        </div>
+      </div>
+      <div class="ai-chat-header-right">
+        <button class="ai-chat-btn" id="aiClearBtn" title="Clear conversation">Clear</button>
+        <button class="ai-chat-close" id="aiChatClose" title="Close (Esc)">&times;</button>
+      </div>
+    </div>
+
+    <div class="ai-chat-insight" id="aiInsightSection">
+      <div class="ai-insight-header">
+        <span class="ai-insight-icon">&#9889;</span>
+        <span class="ai-insight-title">Market Insight</span>
+        <span class="ai-insight-time" id="aiInsightTime"></span>
+      </div>
+      <div class="ai-insight-body" id="aiInsightBody">Waiting for first insight...</div>
+    </div>
+
+    <div class="ai-chat-messages" id="aiChatMessages">
+      <div class="ai-chat-welcome">
+        <div class="ai-welcome-icon">AI</div>
+        <p>Ask me about the live crypto market data.</p>
+        <div class="ai-suggestions">
+          <button class="ai-suggestion" data-q="What's the market sentiment right now?">Market sentiment?</button>
+          <button class="ai-suggestion" data-q="Which coin has the highest volatility?">Highest volatility?</button>
+          <button class="ai-suggestion" data-q="Are there any arbitrage opportunities?">Arbitrage opps?</button>
+          <button class="ai-suggestion" data-q="Compare BTC price across exchanges">BTC cross-exchange</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-chat-input-wrap">
+      <input type="text" class="ai-chat-input" id="aiChatInput" placeholder="Ask about the market..." autocomplete="off">
+      <button class="ai-chat-send" id="aiChatSend" title="Send">&#10148;</button>
     </div>
   </div>
 

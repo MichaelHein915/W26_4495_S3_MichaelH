@@ -1495,6 +1495,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (el('shortcutsModal').classList.contains('open')) { toggleShortcutsModal(); return; }
     if (el('fullscreenOverlay').classList.contains('open')) { closeFullscreen(); return; }
+    if (aiChatOpen) { toggleAiChat(); return; }
     closeModal();
     return;
   }
@@ -1505,6 +1506,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key.toLowerCase() === 't') { el('themeToggle').click(); return; }
   if (e.key.toLowerCase() === 'n') { el('notifToggle').click(); return; }
   if (e.key.toLowerCase() === 'e') { exportCsv(); return; }
+  if (e.key.toLowerCase() === 'a') { toggleAiChat(); return; }
 
   if (windowBtnMap[e.key] !== undefined) {
     const btns = document.querySelectorAll('.window-btn');
@@ -1639,3 +1641,222 @@ document.querySelectorAll('.collapsible-trigger').forEach((btn) => {
 });
 
 startPolling();
+
+// ─── AI Chat Assistant ──────────────────────────────────────────────
+
+const aiChatFab = el('aiChatFab');
+const aiChatPanel = el('aiChatPanel');
+const aiChatClose = el('aiChatClose');
+const aiChatInput = el('aiChatInput');
+const aiChatSend = el('aiChatSend');
+const aiChatMessages = el('aiChatMessages');
+const aiClearBtn = el('aiClearBtn');
+const aiStatusEl = el('aiStatus');
+const aiInsightBody = el('aiInsightBody');
+const aiInsightTime = el('aiInsightTime');
+const aiFabBadge = el('aiFabBadge');
+
+let aiChatOpen = false;
+let aiHistory = [];
+let aiStreaming = false;
+let aiEnabled = false;
+
+function toggleAiChat() {
+  aiChatOpen = !aiChatOpen;
+  aiChatPanel.classList.toggle('open', aiChatOpen);
+  aiChatFab.classList.toggle('open', aiChatOpen);
+  if (aiChatOpen) {
+    aiChatInput.focus();
+    checkAiHealth();
+    fetchAiInsight();
+  }
+}
+
+aiChatFab?.addEventListener('click', toggleAiChat);
+aiChatClose?.addEventListener('click', toggleAiChat);
+
+function checkAiHealth() {
+  fetch(`${API_BASE}/api/ai/health`)
+    .then((r) => r.json())
+    .then((data) => {
+      aiEnabled = data.enabled !== false;
+      if (!aiEnabled) {
+        aiStatusEl.textContent = 'AI disabled';
+        return;
+      }
+      if (data.status === 'ok' && data.model_ready) {
+        aiStatusEl.textContent = 'Online';
+        aiFabBadge.style.display = 'block';
+      } else if (data.status === 'ok') {
+        aiStatusEl.textContent = 'Model loading...';
+      } else {
+        aiStatusEl.textContent = 'Connecting...';
+      }
+    })
+    .catch(() => {
+      aiStatusEl.textContent = 'Offline';
+      aiFabBadge.style.display = 'none';
+    });
+}
+
+function fetchAiInsight() {
+  fetch(`${API_BASE}/api/ai/insights`)
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data.enabled) return;
+      if (data.insight) {
+        aiInsightBody.textContent = data.insight;
+        aiInsightTime.textContent = data.updated_at || '';
+      } else if (data.error) {
+        aiInsightBody.textContent = `Error: ${data.error}`;
+      }
+    })
+    .catch(() => {});
+}
+
+function renderAiMarkdown(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\n/g, '<br>');
+}
+
+function addAiMessage(role, content) {
+  const welcome = aiChatMessages.querySelector('.ai-chat-welcome');
+  if (welcome) welcome.remove();
+
+  const div = document.createElement('div');
+  div.className = `ai-msg ${role}`;
+  div.innerHTML = renderAiMarkdown(content);
+  aiChatMessages.appendChild(div);
+  aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+  return div;
+}
+
+function showTypingIndicator() {
+  const div = document.createElement('div');
+  div.className = 'ai-typing';
+  div.id = 'aiTyping';
+  div.innerHTML = '<span class="ai-typing-dot"></span><span class="ai-typing-dot"></span><span class="ai-typing-dot"></span>';
+  aiChatMessages.appendChild(div);
+  aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+}
+
+function removeTypingIndicator() {
+  const t = el('aiTyping');
+  if (t) t.remove();
+}
+
+async function sendAiMessage(text) {
+  if (!text?.trim() || aiStreaming) return;
+  const message = text.trim();
+
+  addAiMessage('user', message);
+  aiHistory.push({ role: 'user', content: message });
+
+  aiChatInput.value = '';
+  aiChatSend.disabled = true;
+  aiStreaming = true;
+  showTypingIndicator();
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/ai/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        history: aiHistory.slice(-20),
+        stream: true,
+        window: windowMinutes,
+      }),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }));
+      throw new Error(err.error || resp.statusText);
+    }
+
+    removeTypingIndicator();
+    const assistantDiv = addAiMessage('assistant', '');
+    let fullContent = '';
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let sseBuffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      sseBuffer += decoder.decode(value, { stream: true });
+      const lines = sseBuffer.split('\n');
+      sseBuffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data: ')) continue;
+        const payload = trimmed.slice(6);
+        if (payload === '[DONE]') continue;
+        try {
+          const chunk = JSON.parse(payload);
+          if (chunk.content) {
+            fullContent += chunk.content;
+            assistantDiv.innerHTML = renderAiMarkdown(fullContent);
+            aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+          }
+        } catch (_) {}
+      }
+    }
+
+    aiHistory.push({ role: 'assistant', content: fullContent });
+  } catch (err) {
+    removeTypingIndicator();
+    addAiMessage('error', `Failed: ${err.message}`);
+  } finally {
+    aiStreaming = false;
+    aiChatSend.disabled = false;
+    aiChatInput.focus();
+  }
+}
+
+aiChatSend?.addEventListener('click', () => sendAiMessage(aiChatInput.value));
+aiChatInput?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendAiMessage(aiChatInput.value);
+  }
+});
+
+aiClearBtn?.addEventListener('click', () => {
+  aiHistory = [];
+  aiChatMessages.innerHTML = `
+    <div class="ai-chat-welcome">
+      <div class="ai-welcome-icon">AI</div>
+      <p>Ask me about the live crypto market data.</p>
+      <div class="ai-suggestions">
+        <button class="ai-suggestion" data-q="What's the market sentiment right now?">Market sentiment?</button>
+        <button class="ai-suggestion" data-q="Which coin has the highest volatility?">Highest volatility?</button>
+        <button class="ai-suggestion" data-q="Are there any arbitrage opportunities?">Arbitrage opps?</button>
+        <button class="ai-suggestion" data-q="Compare BTC price across exchanges">BTC cross-exchange</button>
+      </div>
+    </div>`;
+  bindSuggestions();
+});
+
+function bindSuggestions() {
+  document.querySelectorAll('.ai-suggestion').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const q = btn.dataset.q;
+      if (q) sendAiMessage(q);
+    });
+  });
+}
+
+bindSuggestions();
+
+setInterval(() => { if (aiChatOpen) fetchAiInsight(); }, 60000);
+
+setTimeout(checkAiHealth, 3000);

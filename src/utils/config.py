@@ -57,6 +57,13 @@ class AppConfig:
     alert_anomaly_enabled: bool = True
     anomaly_contamination: float = 0.05
 
+    # AI Assistant (MLX)
+    ai_enabled: bool = False
+    mlx_server_url: str = "http://localhost:8080"
+    mlx_model: str = "mlx-community/Llama-3.2-3B-Instruct-4bit"
+    ai_insight_interval_sec: int = 60
+    ai_request_timeout_sec: int = 120
+
 
 def _parse_symbols(raw: str) -> list[str]:
     return [symbol.strip() for symbol in raw.split(",") if symbol.strip()]
@@ -118,4 +125,9 @@ def get_config() -> AppConfig:
         alert_price_thresholds=_parse_price_thresholds(os.getenv("ALERT_PRICE_THRESHOLDS", "")),
         alert_anomaly_enabled=os.getenv("ALERT_ANOMALY_ENABLED", "true").lower() in ("1", "true", "yes"),
         anomaly_contamination=float(os.getenv("ANOMALY_CONTAMINATION", "0.05")),
+        ai_enabled=os.getenv("AI_ENABLED", "false").lower() in ("1", "true", "yes"),
+        mlx_server_url=os.getenv("MLX_SERVER_URL", "http://localhost:8080"),
+        mlx_model=os.getenv("MLX_MODEL", "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit"),
+        ai_insight_interval_sec=int(os.getenv("AI_INSIGHT_INTERVAL_SEC", "60")),
+        ai_request_timeout_sec=int(os.getenv("AI_REQUEST_TIMEOUT_SEC", "120")),
     )
