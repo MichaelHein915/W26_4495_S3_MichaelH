@@ -11,11 +11,9 @@ Usage:
 import os
 import sys
 import time
-from pathlib import Path
 
 import boto3
 
-sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
 from utils.config import get_config
 
 config = get_config()

@@ -13,7 +13,6 @@ from pathlib import Path
 
 import redshift_connector
 
-sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
 from utils.config import get_config
 
 SCHEMA_FILE = Path(__file__).resolve().parent / "schema.sql"

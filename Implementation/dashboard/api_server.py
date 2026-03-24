@@ -5,6 +5,7 @@ Consumes Kafka messages in a background thread and exposes REST endpoints.
 
 import json
 import logging
+import os
 import sys
 import threading
 import time
@@ -13,19 +14,20 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
-from flask import Flask, Response, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory
 from kafka import KafkaConsumer
 from prometheus_client import make_wsgi_app
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
 
-repo_root = Path(__file__).resolve().parents[2]
-sys.path.append(str(repo_root / "src"))
-from utils.config import get_config
-from utils.alerts import alert_arbitrage, alert_volume_spike, alert_price_threshold, alert_anomaly
-from utils.anomaly import AnomalyDetector
-from utils.context_builder import build_market_context, build_insight_prompt, build_query_prompt
-from utils.llm_service import MLXClient
-from utils.metrics import (
+# Ensure sibling modules (analytics, ai_routes) are importable when loaded as a package
+_dashboard_dir = str(Path(__file__).resolve().parent)
+if _dashboard_dir not in sys.path:
+    sys.path.insert(0, _dashboard_dir)
+
+from utils.config import get_config  # noqa: E402
+from utils.alerts import alert_arbitrage, alert_volume_spike, alert_price_threshold, alert_anomaly  # noqa: E402
+from utils.anomaly import AnomalyDetector  # noqa: E402
+from utils.metrics import (  # noqa: E402
     DASHBOARD_EVENTS,
     DASHBOARD_FRESHNESS_SECONDS,
     DASHBOARD_KAFKA_ERROR,
@@ -34,14 +36,31 @@ from utils.metrics import (
     DASHBOARD_REQUESTS,
 )
 
+from analytics import (  # noqa: E402
+    parse_event_time as _parse_event_time,
+    compute_metrics as _compute_metrics,
+    compute_arbitrage_opportunities as _compute_arbitrage_opportunities,
+    compute_exchange_metrics as _compute_exchange_metrics,
+    compute_volume_timeseries as _compute_volume_timeseries,
+    compute_volume_by_exchange_timeseries as _compute_volume_by_exchange_timeseries,
+    compute_heatmap_data as _compute_heatmap_data,
+    get_recent_trades as _get_recent_trades,
+    compute_exchange_stats as _compute_exchange_stats,
+    compute_sparklines as _compute_sparklines,
+    compute_candles as _compute_candles,
+    compute_timeseries as _compute_timeseries,
+    compute_volume_spikes as _compute_volume_spikes,
+)
+from ai_routes import ai_bp, start_insight_loop  # noqa: E402
+
 log = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder="web", static_url_path="/")
-
-# Mount Prometheus metrics at /metrics
 app.wsgi_app = DispatcherMiddleware(app.wsgi_app, {"/metrics": make_wsgi_app()})
+app.register_blueprint(ai_bp, url_prefix="/api/ai")
 
-# Shared state (updated by background thread)
+# ── Shared state (updated by background ingestion thread) ────────────
+
 _state = {
     "consumer": None,
     "events": deque(),
@@ -54,15 +73,12 @@ _state = {
 }
 _state_lock = threading.Lock()
 
-# AI assistant state
-_ai_state = {
-    "client": None,
-    "latest_insight": None,
-    "insight_updated_at": None,
-    "insight_error": None,
-}
-_ai_lock = threading.Lock()
+WINDOW_MINUTES = 3
+MAX_RETENTION_MINUTES = 10
+ALERT_INTERVAL_SEC = 15
 
+
+# ── Request hooks ────────────────────────────────────────────────────
 
 @app.before_request
 def _before_request():
@@ -80,18 +96,7 @@ def _after_request(response):
     return response
 
 
-WINDOW_MINUTES = 3
-MAX_RETENTION_MINUTES = 10
-
-
-def _parse_event_time(raw_time: str) -> datetime | None:
-    if not raw_time:
-        return None
-    try:
-        return datetime.fromisoformat(raw_time.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
+# ── Kafka ingestion ──────────────────────────────────────────────────
 
 def _init_consumer(topic: str, bootstrap_servers: str) -> KafkaConsumer | None:
     try:
@@ -102,12 +107,11 @@ def _init_consumer(topic: str, bootstrap_servers: str) -> KafkaConsumer | None:
             auto_offset_reset="latest",
             enable_auto_commit=True,
             value_deserializer=lambda v: json.loads(v.decode("utf-8")),
-            # Avoid premature disconnects: longer timeouts for local/Docker setups
             session_timeout_ms=30000,
             heartbeat_interval_ms=5000,
             request_timeout_ms=40000,
         )
-    except Exception as e:
+    except Exception:
         return None
 
 
@@ -197,392 +201,17 @@ def _poll_and_ingest():
             time.sleep(2)
 
 
+# ── State access ─────────────────────────────────────────────────────
+
 def _get_events():
     with _state_lock:
         return list(_state["events"]), dict(_state)
 
 
-def _compute_metrics(events: list) -> list[dict]:
-    if not events:
-        return []
-    df = pd.DataFrame(events)
-    metrics = (
-        df.groupby("product_id", as_index=False)
-        .agg(
-            trade_count=("price_usd", "count"),
-            avg_price_usd=("price_usd", "mean"),
-            total_volume_qty=("size_qty", "sum"),
-            total_notional_usd=("notional_usd", "sum"),
-            volatility_usd=("price_usd", "std"),
-            first_price=("price_usd", "first"),
-            last_price=("price_usd", "last"),
-        )
-        .sort_values("product_id")
-    )
-    metrics["vwap_usd"] = metrics["avg_price_usd"]
-    has_volume = metrics["total_volume_qty"] > 0
-    metrics.loc[has_volume, "vwap_usd"] = (
-        metrics.loc[has_volume, "total_notional_usd"] / metrics.loc[has_volume, "total_volume_qty"]
-    )
-    metrics["volatility_usd"] = metrics["volatility_usd"].fillna(0.0)
-    metrics["price_change_pct"] = (
-        (((metrics["last_price"] - metrics["first_price"]) / metrics["first_price"]) * 100).round(2).fillna(0.0)
-    )
-    for col in ["avg_price_usd", "vwap_usd", "volatility_usd", "total_volume_qty"]:
-        metrics[col] = metrics[col].round(4 if col == "total_volume_qty" else 2)
-    return metrics[
-        [
-            "product_id",
-            "trade_count",
-            "avg_price_usd",
-            "vwap_usd",
-            "volatility_usd",
-            "total_volume_qty",
-            "price_change_pct",
-        ]
-    ].to_dict(orient="records")
-
-
-def _normalize_symbol_base(product_id: str) -> str:
-    """Extract base asset for cross-exchange comparison. BTC-USD, BTC-USDT -> BTC."""
-    if "-" in product_id:
-        return product_id.split("-", 1)[0].upper()
-    return product_id.upper()
-
-
-def _compute_arbitrage_opportunities(events: list, threshold_pct: float = 0.3) -> list[dict]:
-    """
-    Detect cross-exchange price differences. Returns opportunities where
-    spread between cheapest and most expensive exchange exceeds threshold.
-    """
-    if not events or len(events) < 2:
-        return []
-    df = pd.DataFrame(events)
-    if "exchange" not in df.columns:
-        df["exchange"] = "coinbase"
-    df["exchange"] = df["exchange"].fillna("coinbase")
-    df["base"] = df["product_id"].apply(_normalize_symbol_base)
-    df["event_time"] = pd.to_datetime(df["event_time"], utc=True)
-
-    # Avg price per (base, exchange) in the window
-    by_base_exchange = (
-        df.groupby(["base", "exchange"], as_index=False)
-        .agg(avg_price=("price_usd", "mean"), last_price=("price_usd", "last"))
-        .groupby("base")
-    )
-
-    opportunities = []
-    for base, grp in by_base_exchange:
-        if len(grp) < 2:
-            continue
-        prices = grp.set_index("exchange")["avg_price"]
-        min_price = prices.min()
-        max_price = prices.max()
-        if min_price <= 0:
-            continue
-        spread_pct = ((max_price - min_price) / min_price) * 100
-        if spread_pct < threshold_pct:
-            continue
-        cheap_ex = prices.idxmin()
-        expensive_ex = prices.idxmax()
-        opportunities.append(
-            {
-                "product_id": f"{base}-USD",
-                "base": base,
-                "cheap_exchange": cheap_ex,
-                "expensive_exchange": expensive_ex,
-                "cheap_price": round(float(min_price), 2),
-                "expensive_price": round(float(max_price), 2),
-                "spread_pct": round(spread_pct, 2),
-            }
-        )
-    return sorted(opportunities, key=lambda x: -x["spread_pct"])
-
-
-def _compute_exchange_metrics(events: list) -> list[dict]:
-    """Per (product_id, exchange): avg_price, trade_count, total_volume for exchange comparison chart."""
-    if not events:
-        return []
-    df = pd.DataFrame(events)
-    if "exchange" not in df.columns:
-        df["exchange"] = "coinbase"
-    df["exchange"] = df["exchange"].fillna("coinbase")
-    agg = df.groupby(["product_id", "exchange"], as_index=False).agg(
-        avg_price_usd=("price_usd", "mean"),
-        trade_count=("price_usd", "count"),
-        total_volume_qty=("size_qty", "sum"),
-    )
-    for col in ["avg_price_usd", "total_volume_qty"]:
-        agg[col] = agg[col].round(4 if col == "total_volume_qty" else 2)
-    return agg.to_dict(orient="records")
-
-
-def _compute_volume_timeseries(events: list) -> list[dict]:
-    """Total volume per 30s bucket for volume-over-time chart."""
-    if not events:
-        return []
-    df = pd.DataFrame(events)
-    df["event_time"] = pd.to_datetime(df["event_time"], utc=True)
-    ts = df.set_index("event_time").resample("30s").agg(total_volume_qty=("size_qty", "sum")).reset_index().dropna()
-    ts["event_time"] = ts["event_time"].dt.strftime("%Y-%m-%dT%H:%M:%S")
-    ts["total_volume_qty"] = ts["total_volume_qty"].round(4)
-    return ts.to_dict(orient="records")
-
-
-def _compute_volume_by_exchange_timeseries(events: list) -> list[dict]:
-    """Volume per 30s bucket per exchange for stacked area chart."""
-    if not events:
-        return []
-    df = pd.DataFrame(events)
-    if "exchange" not in df.columns:
-        df["exchange"] = "coinbase"
-    df["exchange"] = df["exchange"].fillna("coinbase")
-    df["event_time"] = pd.to_datetime(df["event_time"], utc=True)
-    ts = (
-        df.set_index("event_time")
-        .groupby("exchange")
-        .resample("30s", include_groups=False)
-        .agg(volume=("size_qty", "sum"))
-        .reset_index()
-    )
-    ts["event_time"] = ts["event_time"].dt.strftime("%Y-%m-%dT%H:%M:%S")
-    ts["volume"] = ts["volume"].round(4)
-    return ts.to_dict(orient="records")
-
-
-def _compute_heatmap_data(events: list) -> dict:
-    """Price change % by symbol x time bucket for heatmap. Returns {labels, times, matrix}."""
-    if not events:
-        return {"labels": [], "times": [], "matrix": []}
-    df = pd.DataFrame(events)
-    df["event_time"] = pd.to_datetime(df["event_time"], utc=True)
-    df["bucket"] = df["event_time"].dt.floor("30s")
-    agg = df.groupby(["product_id", "bucket"], as_index=False).agg(avg_price=("price_usd", "mean"))
-    if agg.empty:
-        return {"labels": [], "times": [], "matrix": []}
-    buckets = sorted(agg["bucket"].unique())[-20:]
-    labels = sorted(agg["product_id"].unique())
-    matrix = []
-    for pid in labels:
-        row = []
-        for b in buckets:
-            v = agg[(agg["product_id"] == pid) & (agg["bucket"] == b)]["avg_price"]
-            row.append(float(v.iloc[0]) if len(v) > 0 else None)
-        first = next((v for v in row if v is not None), None)
-        pct_row = [
-            round(((v - first) / first * 100), 2) if first and v is not None else None
-            for v in row
-        ]
-        matrix.append(pct_row)
-    return {
-        "labels": labels,
-        "times": [b.strftime("%H:%M") for b in buckets],
-        "matrix": matrix,
-    }
-
-
-def _get_recent_trades(events: list, limit: int = 20) -> list[dict]:
-    """Last N trades for ticker display."""
-    if not events:
-        return []
-    sorted_events = sorted(events, key=lambda e: e["event_time"], reverse=True)
-    out = []
-    for e in sorted_events[:limit]:
-        t = e["event_time"]
-        time_str = t.strftime("%H:%M:%S") if hasattr(t, "strftime") else str(t)[:19]
-        out.append(
-            {
-                "product_id": e["product_id"],
-                "price_usd": round(float(e["price_usd"]), 2),
-                "size_qty": round(float(e.get("size_qty", 0)), 4),
-                "exchange": e.get("exchange", "coinbase"),
-                "event_time": time_str,
-            }
-        )
-    return out
-
-
-def _compute_exchange_stats(events: list) -> dict:
-    """Per-exchange trade count and list of unique exchanges seen."""
-    if not events:
-        return {"exchanges": [], "exchange_counts": {}, "exchange_symbols": {}}
-    df = pd.DataFrame(events)
-    if "exchange" not in df.columns:
-        df["exchange"] = "coinbase"
-    df["exchange"] = df["exchange"].fillna("coinbase")
-    by_exchange = df.groupby("exchange", as_index=False).agg(
-        trade_count=("price_usd", "count"),
-    )
-    exchange_counts = dict(zip(by_exchange["exchange"], by_exchange["trade_count"]))
-    exchange_symbols = {}
-    for exch, grp in df.groupby("exchange"):
-        exchange_symbols[exch] = sorted(grp["product_id"].unique().tolist())
-    return {
-        "exchanges": sorted(df["exchange"].unique().tolist()),
-        "exchange_counts": exchange_counts,
-        "exchange_symbols": exchange_symbols,
-    }
-
-
-def _compute_sparklines(events: list) -> dict[str, list[float]]:
-    """Return last ~20 price samples per symbol for inline sparklines."""
-    if not events:
-        return {}
-    df = pd.DataFrame(events)
-    df["event_time"] = pd.to_datetime(df["event_time"], utc=True)
-    sparklines = {}
-    for pid, grp in df.groupby("product_id"):
-        prices = grp.sort_values("event_time")["price_usd"].tolist()
-        step = max(1, len(prices) // 20)
-        sparklines[pid] = [round(p, 2) for p in prices[::step][-20:]]
-    return sparklines
-
-
-def _compute_candles(events: list, symbol: str | None = None) -> list[dict]:
-    """Compute 1-minute OHLCV candles, optionally filtered to a single symbol."""
-    if not events:
-        return []
-    df = pd.DataFrame(events)
-    if symbol:
-        df = df[df["product_id"] == symbol]
-    if df.empty:
-        return []
-    df["event_time"] = pd.to_datetime(df["event_time"], utc=True)
-    df = df.set_index("event_time")
-
-    candles = (
-        df.groupby("product_id")
-        .resample("1min", include_groups=False)
-        .agg(
-            open=("price_usd", "first"),
-            high=("price_usd", "max"),
-            low=("price_usd", "min"),
-            close=("price_usd", "last"),
-            volume=("size_qty", "sum"),
-        )
-        .reset_index()
-    )
-    candles = candles.dropna(subset=["open"])
-    candles["event_time"] = candles["event_time"].dt.strftime("%Y-%m-%dT%H:%M:%S")
-    for col in ["open", "high", "low", "close"]:
-        candles[col] = candles[col].round(2)
-    candles["volume"] = candles["volume"].round(6)
-    return candles.to_dict(orient="records")
-
-
-def _compute_timeseries(events: list) -> list[dict]:
-    if not events:
-        return []
-    df = pd.DataFrame(events)
-    df["event_time"] = pd.to_datetime(df["event_time"], utc=True)
-    df["avg_price_usd"] = df["price_usd"].astype(float)
-    ts = (
-        df.set_index("event_time")
-        .groupby("product_id")
-        .resample("30s", include_groups=False)
-        .mean(numeric_only=True)
-        .reset_index()
-        .sort_values(["product_id", "event_time"])
-    )
-    ts = ts.dropna(subset=["avg_price_usd"])
-    ts["event_time"] = ts["event_time"].dt.strftime("%Y-%m-%dT%H:%M:%S")
-    return ts.to_dict(orient="records")
-
-
-@app.route("/")
-def index():
-    return send_from_directory(app.static_folder, "index.html")
-
-
-@app.route("/favicon.ico")
-def favicon():
-    """Prevent 404 when browser requests favicon."""
-    return "", 204
-
-
-@app.route("/api/docs")
-def api_docs():
-    """REST API documentation."""
-    return send_from_directory(app.static_folder, "api-docs.html")
-
-
-@app.route("/health")
-def health():
-    """Health check: Kafka connectivity and data freshness."""
-    events, meta = _get_events()
-    kafka_error = meta.get("kafka_error")
-    last_event_time = meta.get("last_event_time")
-    event_count = len(events)
-
-    now = datetime.now(timezone.utc)
-    freshness_seconds = None
-    if last_event_time:
-        freshness_seconds = (now - last_event_time).total_seconds()
-
-    # Healthy if Kafka connected (no error) and either: no data yet (waiting), or data is fresh (<5min)
-    stale_threshold_sec = 300
-    is_healthy = kafka_error is None and (
-        (event_count == 0 and freshness_seconds is None)
-        or (event_count > 0 and freshness_seconds is not None and freshness_seconds < stale_threshold_sec)
-    )
-    status_code = 200 if is_healthy else 503
-
-    return (
-        jsonify(
-            {
-                "status": "ok" if is_healthy else "degraded",
-                "kafka_connected": kafka_error is None,
-                "kafka_error": kafka_error,
-                "event_count": event_count,
-                "freshness_seconds": round(freshness_seconds, 1) if freshness_seconds is not None else None,
-                "last_event_time": last_event_time.isoformat() if last_event_time else None,
-            }
-        ),
-        status_code,
-    )
-
-
-@app.route("/api/candles")
-def candles_endpoint():
-    """OHLCV candles for a specific symbol."""
-    symbol = request.args.get("symbol", "")
-    window = int(request.args.get("window", WINDOW_MINUTES))
-    window = max(1, min(window, 30))
-    exchange_filter = request.args.get("exchange", "").strip().lower()
-    events, _ = _get_events()
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=window)
-    events = [e for e in events if e["event_time"] >= cutoff]
-    if exchange_filter:
-        events = [e for e in events if e.get("exchange", "coinbase").lower() == exchange_filter]
-    return jsonify({"candles": _compute_candles(events, symbol or None)})
-
-
-def _compute_volume_spikes(
-    metrics: list[dict], volume_history: dict, threshold: float = 2.0
-) -> tuple[list[dict], dict]:
-    """Returns (alerts, updated volume_history). Caller should store volume_history back in state."""
-    alerts = []
-    for row in metrics:
-        symbol = row["product_id"]
-        current = float(row["total_volume_qty"])
-        history = volume_history.setdefault(symbol, deque(maxlen=30))
-        if len(history) >= 5:
-            baseline = sum(history) / len(history)
-            if baseline > 0 and current >= threshold * baseline:
-                alerts.append(
-                    {
-                        "product_id": symbol,
-                        "current_volume": current,
-                        "baseline_volume": baseline,
-                        "spike_ratio": round(current / baseline, 2),
-                    }
-                )
-        history.append(current)
-    return alerts, volume_history
-
+# ── Dashboard payload builder ────────────────────────────────────────
 
 def _build_dashboard_payload(window_minutes: int, exchange_filter: str) -> dict:
-    """Build full dashboard payload for given window and exchange filter."""
+    """Build full dashboard payload. Computation only — no alert notifications."""
     events, meta = _get_events()
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
     events = [e for e in events if e["event_time"] >= cutoff]
@@ -591,22 +220,6 @@ def _build_dashboard_payload(window_minutes: int, exchange_filter: str) -> dict:
 
     config = get_config()
     arbitrage = _compute_arbitrage_opportunities(events, threshold_pct=config.alert_arbitrage_threshold_pct)
-    for opp in arbitrage:
-        alert_arbitrage(
-            config.slack_webhook_url,
-            opp["product_id"],
-            opp["cheap_exchange"],
-            opp["expensive_exchange"],
-            opp["cheap_price"],
-            opp["expensive_price"],
-            opp["spread_pct"],
-            email_to=config.alert_email_to,
-            smtp_host=config.smtp_host,
-            smtp_port=config.smtp_port,
-            smtp_user=config.smtp_user,
-            smtp_password=config.smtp_password,
-            smtp_use_tls=config.smtp_use_tls,
-        )
 
     metrics = _compute_metrics(events)
     anomalies = []
@@ -621,22 +234,7 @@ def _build_dashboard_payload(window_minutes: int, exchange_filter: str) -> dict:
             anomalies = detector.detect(metrics)
         except Exception:
             anomalies = []
-        for a in anomalies:
-            alert_anomaly(
-                config.slack_webhook_url,
-                a["product_id"],
-                a["anomaly_score"],
-                a["trade_count"],
-                a["volatility_usd"],
-                a["total_volume_qty"],
-                a["price_change_pct"],
-                email_to=config.alert_email_to,
-                smtp_host=config.smtp_host,
-                smtp_port=config.smtp_port,
-                smtp_user=config.smtp_user,
-                smtp_password=config.smtp_password,
-                smtp_use_tls=config.smtp_use_tls,
-            )
+
     timeseries = _compute_timeseries(events)
     sparklines = _compute_sparklines(events)
     exchange_stats = _compute_exchange_stats(events)
@@ -647,20 +245,6 @@ def _build_dashboard_payload(window_minutes: int, exchange_filter: str) -> dict:
     recent_trades = _get_recent_trades(events, limit=25)
     volume_history = {k: deque(v, maxlen=30) for k, v in meta.get("volume_history", {}).items()}
     alerts, volume_history = _compute_volume_spikes(metrics, volume_history, threshold=config.alert_volume_spike_ratio)
-    for a in alerts:
-        alert_volume_spike(
-            config.slack_webhook_url,
-            a["product_id"],
-            a["current_volume"],
-            a["baseline_volume"],
-            a["spike_ratio"],
-            email_to=config.alert_email_to,
-            smtp_host=config.smtp_host,
-            smtp_port=config.smtp_port,
-            smtp_user=config.smtp_user,
-            smtp_password=config.smtp_password,
-            smtp_use_tls=config.smtp_use_tls,
-        )
 
     price_alerts = []
     for symbol, direction, threshold_price in config.alert_price_thresholds:
@@ -678,19 +262,6 @@ def _build_dashboard_payload(window_minutes: int, exchange_filter: str) -> dict:
                             "threshold_price": threshold_price,
                             "current_price": current,
                         }
-                    )
-                    alert_price_threshold(
-                        config.slack_webhook_url,
-                        m["product_id"],
-                        direction,
-                        threshold_price,
-                        current,
-                        email_to=config.alert_email_to,
-                        smtp_host=config.smtp_host,
-                        smtp_port=config.smtp_port,
-                        smtp_user=config.smtp_user,
-                        smtp_password=config.smtp_password,
-                        smtp_use_tls=config.smtp_use_tls,
                     )
                 break
 
@@ -755,6 +326,156 @@ def _build_dashboard_payload(window_minutes: int, exchange_filter: str) -> dict:
     }
 
 
+# ── Background alert loop ────────────────────────────────────────────
+
+def _alert_loop():
+    """Background thread: periodically check for and fire alert notifications."""
+    config = get_config()
+    time.sleep(ALERT_INTERVAL_SEC)
+
+    while _state["running"]:
+        try:
+            payload = _build_dashboard_payload(WINDOW_MINUTES, "")
+
+            for opp in payload.get("arbitrage", []):
+                alert_arbitrage(
+                    config.slack_webhook_url,
+                    opp["product_id"],
+                    opp["cheap_exchange"],
+                    opp["expensive_exchange"],
+                    opp["cheap_price"],
+                    opp["expensive_price"],
+                    opp["spread_pct"],
+                    email_to=config.alert_email_to,
+                    smtp_host=config.smtp_host,
+                    smtp_port=config.smtp_port,
+                    smtp_user=config.smtp_user,
+                    smtp_password=config.smtp_password,
+                    smtp_use_tls=config.smtp_use_tls,
+                )
+
+            for a in payload.get("anomalies", []):
+                alert_anomaly(
+                    config.slack_webhook_url,
+                    a["product_id"],
+                    a["anomaly_score"],
+                    a["trade_count"],
+                    a["volatility_usd"],
+                    a["total_volume_qty"],
+                    a["price_change_pct"],
+                    email_to=config.alert_email_to,
+                    smtp_host=config.smtp_host,
+                    smtp_port=config.smtp_port,
+                    smtp_user=config.smtp_user,
+                    smtp_password=config.smtp_password,
+                    smtp_use_tls=config.smtp_use_tls,
+                )
+
+            for a in payload.get("alerts", []):
+                alert_volume_spike(
+                    config.slack_webhook_url,
+                    a["product_id"],
+                    a["current_volume"],
+                    a["baseline_volume"],
+                    a["spike_ratio"],
+                    email_to=config.alert_email_to,
+                    smtp_host=config.smtp_host,
+                    smtp_port=config.smtp_port,
+                    smtp_user=config.smtp_user,
+                    smtp_password=config.smtp_password,
+                    smtp_use_tls=config.smtp_use_tls,
+                )
+
+            for pa in payload.get("price_alerts", []):
+                alert_price_threshold(
+                    config.slack_webhook_url,
+                    pa["product_id"],
+                    pa["direction"],
+                    pa["threshold_price"],
+                    pa["current_price"],
+                    email_to=config.alert_email_to,
+                    smtp_host=config.smtp_host,
+                    smtp_port=config.smtp_port,
+                    smtp_user=config.smtp_user,
+                    smtp_password=config.smtp_password,
+                    smtp_use_tls=config.smtp_use_tls,
+                )
+
+        except Exception:
+            log.exception("Alert loop error")
+
+        time.sleep(ALERT_INTERVAL_SEC)
+
+
+# ── Routes ───────────────────────────────────────────────────────────
+
+@app.route("/")
+def index():
+    return send_from_directory(app.static_folder, "index.html")
+
+
+@app.route("/favicon.ico")
+def favicon():
+    """Prevent 404 when browser requests favicon."""
+    return "", 204
+
+
+@app.route("/api/docs")
+def api_docs():
+    """REST API documentation."""
+    return send_from_directory(app.static_folder, "api-docs.html")
+
+
+@app.route("/health")
+def health():
+    """Health check: Kafka connectivity and data freshness."""
+    events, meta = _get_events()
+    kafka_error = meta.get("kafka_error")
+    last_event_time = meta.get("last_event_time")
+    event_count = len(events)
+
+    now = datetime.now(timezone.utc)
+    freshness_seconds = None
+    if last_event_time:
+        freshness_seconds = (now - last_event_time).total_seconds()
+
+    stale_threshold_sec = 300
+    is_healthy = kafka_error is None and (
+        (event_count == 0 and freshness_seconds is None)
+        or (event_count > 0 and freshness_seconds is not None and freshness_seconds < stale_threshold_sec)
+    )
+    status_code = 200 if is_healthy else 503
+
+    return (
+        jsonify(
+            {
+                "status": "ok" if is_healthy else "degraded",
+                "kafka_connected": kafka_error is None,
+                "kafka_error": kafka_error,
+                "event_count": event_count,
+                "freshness_seconds": round(freshness_seconds, 1) if freshness_seconds is not None else None,
+                "last_event_time": last_event_time.isoformat() if last_event_time else None,
+            }
+        ),
+        status_code,
+    )
+
+
+@app.route("/api/candles")
+def candles_endpoint():
+    """OHLCV candles for a specific symbol."""
+    symbol = request.args.get("symbol", "")
+    window = int(request.args.get("window", WINDOW_MINUTES))
+    window = max(1, min(window, 30))
+    exchange_filter = request.args.get("exchange", "").strip().lower()
+    events, _ = _get_events()
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=window)
+    events = [e for e in events if e["event_time"] >= cutoff]
+    if exchange_filter:
+        events = [e for e in events if e.get("exchange", "coinbase").lower() == exchange_filter]
+    return jsonify({"candles": _compute_candles(events, symbol or None)})
+
+
 @app.route("/api/dashboard")
 def dashboard():
     """Single endpoint returning all dashboard data."""
@@ -764,196 +485,27 @@ def dashboard():
     return jsonify(_build_dashboard_payload(window_minutes, exchange_filter))
 
 
-# ── AI Assistant Endpoints ────────────────────────────────────────────
-
-
-def _get_mlx_client() -> MLXClient | None:
-    """Lazy-init the MLX LLM client."""
-    with _ai_lock:
-        if _ai_state["client"] is not None:
-            return _ai_state["client"]
-    config = get_config()
-    if not config.ai_enabled:
-        return None
-    client = MLXClient(
-        base_url=config.mlx_server_url,
-        model=config.mlx_model,
-        timeout=config.ai_request_timeout_sec,
-    )
-    with _ai_lock:
-        _ai_state["client"] = client
-    return client
-
-
-def _insight_loop():
-    """Background thread: periodically generate market insight summaries."""
-    config = get_config()
-    if not config.ai_enabled:
-        return
-    interval = config.ai_insight_interval_sec
-
-    # Wait for initial data before first insight
-    time.sleep(min(interval, 30))
-
-    while _state["running"]:
-        try:
-            client = _get_mlx_client()
-            if client is None:
-                time.sleep(interval)
-                continue
-
-            payload = _build_dashboard_payload(WINDOW_MINUTES, "")
-            if not payload.get("metrics"):
-                time.sleep(10)
-                continue
-
-            prompt = build_insight_prompt(payload)
-            insight = client.generate(prompt)
-
-            with _ai_lock:
-                _ai_state["latest_insight"] = insight
-                _ai_state["insight_updated_at"] = datetime.now(timezone.utc).strftime(
-                    "%H:%M:%S UTC"
-                )
-                _ai_state["insight_error"] = None
-        except Exception as exc:
-            log.exception("Insight generation failed")
-            with _ai_lock:
-                _ai_state["insight_error"] = str(exc)
-
-        time.sleep(interval)
-
-
-@app.route("/api/ai/health")
-def ai_health():
-    """Check AI assistant availability."""
-    config = get_config()
-    if not config.ai_enabled:
-        return jsonify({"enabled": False, "status": "disabled"}), 200
-
-    client = _get_mlx_client()
-    if client is None:
-        return jsonify({"enabled": True, "status": "client_init_failed"}), 503
-
-    health = client.health_check()
-    code = 200 if health.get("status") == "ok" else 503
-    return jsonify({"enabled": True, **health}), code
-
-
-@app.route("/api/ai/chat", methods=["POST"])
-def ai_chat():
-    """Conversational AI with live market context. Supports SSE streaming."""
-    config = get_config()
-    if not config.ai_enabled:
-        return jsonify({"error": "AI assistant is disabled"}), 503
-
-    client = _get_mlx_client()
-    if client is None:
-        return jsonify({"error": "AI service unavailable"}), 503
-
-    body = request.get_json(silent=True) or {}
-    user_message = body.get("message", "").strip()
-    if not user_message:
-        return jsonify({"error": "message is required"}), 400
-
-    history = body.get("history", [])
-    stream = body.get("stream", True)
-
-    window = int(body.get("window", WINDOW_MINUTES))
-    window = max(1, min(window, 30))
-    payload = _build_dashboard_payload(window, "")
-    context = build_market_context(payload)
-
-    messages = []
-    for msg in history[-20:]:
-        role = msg.get("role", "user")
-        if role in ("user", "assistant"):
-            messages.append({"role": role, "content": msg.get("content", "")})
-    messages.append({"role": "user", "content": user_message})
-
-    if stream:
-
-        def generate():
-            for chunk in client.chat(messages, context=context, stream=True):
-                yield f"data: {json.dumps({'content': chunk})}\n\n"
-            yield "data: [DONE]\n\n"
-
-        return Response(generate(), mimetype="text/event-stream")
-
-    result = client.chat(messages, context=context, stream=False)
-    return jsonify(result)
-
-
-@app.route("/api/ai/insights")
-def ai_insights():
-    """Return the latest auto-generated market insight summary."""
-    config = get_config()
-    if not config.ai_enabled:
-        return jsonify({"enabled": False}), 200
-
-    with _ai_lock:
-        insight = _ai_state["latest_insight"]
-        updated_at = _ai_state["insight_updated_at"]
-        error = _ai_state["insight_error"]
-
-    return jsonify(
-        {
-            "enabled": True,
-            "insight": insight,
-            "updated_at": updated_at,
-            "error": error,
-        }
-    )
-
-
-@app.route("/api/ai/query", methods=["POST"])
-def ai_query():
-    """Natural-language data query — LLM parses intent and returns structured data."""
-    config = get_config()
-    if not config.ai_enabled:
-        return jsonify({"error": "AI assistant is disabled"}), 503
-
-    client = _get_mlx_client()
-    if client is None:
-        return jsonify({"error": "AI service unavailable"}), 503
-
-    body = request.get_json(silent=True) or {}
-    query = body.get("query", "").strip()
-    if not query:
-        return jsonify({"error": "query is required"}), 400
-
-    window = int(body.get("window", WINDOW_MINUTES))
-    window = max(1, min(window, 30))
-    payload = _build_dashboard_payload(window, "")
-    prompt = build_query_prompt(query, payload)
-
-    raw = client.generate(prompt)
-
-    # Try to parse as JSON; fall back to raw text
-    try:
-        result = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
-        result = {"answer": raw, "symbols": [], "exchanges": [], "data": []}
-
-    return jsonify(result)
-
+# ── Entrypoint ───────────────────────────────────────────────────────
 
 def main():
-    get_config()  # validate config on startup
-    t = threading.Thread(target=_poll_and_ingest, daemon=True)
-    t.start()
+    get_config()
 
+    # Store payload builder on app for AI routes
+    app.config["get_dashboard_payload"] = _build_dashboard_payload
+    app.config["WINDOW_MINUTES"] = WINDOW_MINUTES
+
+    # Kafka ingestion thread
+    threading.Thread(target=_poll_and_ingest, daemon=True).start()
+
+    # Alert notification thread (decoupled from API request cycle)
+    threading.Thread(target=_alert_loop, daemon=True).start()
+
+    # AI insight thread
     config = get_config()
     if config.ai_enabled:
-        insight_thread = threading.Thread(target=_insight_loop, daemon=True)
-        insight_thread.start()
-        log.info(
-            "AI assistant enabled (model=%s, insight_interval=%ds)",
-            config.mlx_model,
-            config.ai_insight_interval_sec,
-        )
+        start_insight_loop(_build_dashboard_payload, lambda: _state["running"], WINDOW_MINUTES)
 
-    port = int(__import__("os").environ.get("DASHBOARD_PORT", "5000"))
+    port = int(os.environ.get("DASHBOARD_PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
 
 

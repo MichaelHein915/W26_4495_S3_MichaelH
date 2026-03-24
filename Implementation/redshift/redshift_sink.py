@@ -18,7 +18,6 @@ import sys
 import time
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 
 import boto3
 import pandas as pd
@@ -26,8 +25,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import redshift_connector
 
-sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
 from utils.config import get_config
+from utils.metrics import SINK_RECORDS_FLUSHED, SINK_FLUSH_ERRORS
 from utils.parse_trade import parse_trade_message
 
 # ---------------------------------------------------------------------------
@@ -266,7 +265,9 @@ def main():
                 logger.info("Flushing %d records (%.1fs since last flush)", len(buffer), elapsed)
                 try:
                     flush_buffer(buffer)
+                    SINK_RECORDS_FLUSHED.labels(sink_type="redshift").inc(len(buffer))
                 except Exception:
+                    SINK_FLUSH_ERRORS.labels(sink_type="redshift").inc()
                     logger.exception("Flush failed — records kept in buffer for retry")
                     continue
                 buffer.clear()

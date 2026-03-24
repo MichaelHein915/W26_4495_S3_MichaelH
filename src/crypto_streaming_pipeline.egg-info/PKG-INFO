@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: crypto-streaming-pipeline
+Version: 0.1.0
+Summary: Real-time cryptocurrency streaming pipeline with Kafka, PySpark, and live dashboards
+Requires-Python: >=3.11

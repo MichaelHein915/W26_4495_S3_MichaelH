@@ -87,16 +87,19 @@ class BaseExchange(abc.ABC):
             self._logger.warning("Malformed message from %s: %s", self.name, message[:200])
             return
 
-        normalised = self._parse_message(data)
-        if normalised is None:
+        result = self._parse_message(data)
+        if result is None:
             return
 
-        product_id = normalised.get("product_id", "unknown")
-        self._logger.info("[%s] %s: $%s", self.name, product_id, normalised.get("price"))
-        future = self._producer.send(self._topic, key=product_id, value=normalised)
-        if _METRICS_AVAILABLE:
-            future.add_callback(lambda *_: TRADES_PUBLISHED.labels(exchange=self.name).inc())
-        future.add_errback(self._on_send_error)
+        # Support both single-dict and list-of-dicts (e.g. Kraken batches)
+        items = result if isinstance(result, list) else [result]
+        for normalised in items:
+            product_id = normalised.get("product_id", "unknown")
+            self._logger.info("[%s] %s: $%s", self.name, product_id, normalised.get("price"))
+            future = self._producer.send(self._topic, key=product_id, value=normalised)
+            if _METRICS_AVAILABLE:
+                future.add_callback(lambda *_: TRADES_PUBLISHED.labels(exchange=self.name).inc())
+            future.add_errback(self._on_send_error)
 
     def _on_error(self, ws: Any, error: Exception) -> None:
         self._logger.error("[%s] WebSocket error: %s", self.name, error)

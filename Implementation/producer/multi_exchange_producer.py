@@ -13,16 +13,17 @@ from pathlib import Path
 
 from kafka import KafkaProducer
 
-repo_root = Path(__file__).resolve().parents[2]
-producer_dir = Path(__file__).resolve().parent
-sys.path.insert(0, str(repo_root / "src"))
-sys.path.insert(0, str(producer_dir))
-from utils.config import get_config
+# Ensure sibling exchange modules are importable
+_producer_dir = str(Path(__file__).resolve().parent)
+if _producer_dir not in sys.path:
+    sys.path.insert(0, _producer_dir)
 
-from exchange_binance import BinanceProducer
-from exchange_coinbase import CoinbaseProducer
-from exchange_kraken import KrakenProducer
-from utils.metrics import start_metrics_server
+from utils.config import get_config  # noqa: E402
+
+from exchange_binance import BinanceProducer  # noqa: E402
+from exchange_coinbase import CoinbaseProducer  # noqa: E402
+from exchange_kraken import KrakenProducer  # noqa: E402
+from utils.metrics import start_metrics_server  # noqa: E402
 
 EXCHANGE_CLASSES = {
     "coinbase": CoinbaseProducer,

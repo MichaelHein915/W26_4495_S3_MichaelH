@@ -70,20 +70,5 @@ class KrakenProducer(BaseExchange):
 
         return results[0] if len(results) == 1 else results if results else None
 
-    def _on_message(self, ws, message: str) -> None:
-        try:
-            data = json.loads(message)
-        except json.JSONDecodeError:
-            self._logger.warning("Malformed message from %s", self.name)
-            return
-
-        parsed = self._parse_message(data)
-        if parsed is None:
-            return
-
-        items = parsed if isinstance(parsed, list) else [parsed]
-        for normalised in items:
-            product_id = normalised.get("product_id", "unknown")
-            self._logger.info("[%s] %s: $%s", self.name, product_id, normalised.get("price"))
-            future = self._producer.send(self._topic, key=product_id, value=normalised)
-            future.add_errback(self._on_send_error)
+    # _on_message is inherited from BaseExchange, which handles both
+    # single-dict and list-of-dicts returns from _parse_message.

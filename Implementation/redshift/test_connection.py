@@ -6,12 +6,10 @@ Usage:
 """
 
 import sys
-from pathlib import Path
 
 import boto3
 import redshift_connector
 
-sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
 from utils.config import get_config
 
 

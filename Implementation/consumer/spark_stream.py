@@ -1,5 +1,4 @@
 import os
-import sys
 from pathlib import Path
 from shutil import rmtree
 
@@ -7,8 +6,6 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import coalesce, col, from_json, lit, to_timestamp, window
 from pyspark.sql.types import DoubleType, StringType, StructField, StructType
 
-repo_root = Path(__file__).resolve().parents[2]
-sys.path.append(str(repo_root / "src"))
 from utils.config import get_config
 from utils.metrics import CONSUMER_RUNNING, start_metrics_server
 

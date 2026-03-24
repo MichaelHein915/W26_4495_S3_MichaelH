@@ -394,10 +394,17 @@ cryto-streaming-pipeline/
 │   └── grafana/
 │       ├── provisioning/           # Grafana datasources & dashboards
 │       └── dashboards/             # Pre-built Crypto Pipeline dashboard
+├── pyproject.toml                  # Python packaging (pip install -e .)
 ├── src/
 │   └── utils/
+│       ├── __init__.py
 │       ├── config.py               # Centralized AppConfig loader
-│       └── parse_trade.py          # Shared trade message parser (raw + normalised)
+│       ├── parse_trade.py          # Shared trade message parser (raw + normalised)
+│       ├── metrics.py              # Prometheus metric definitions
+│       ├── alerts.py               # Slack + email alert dispatch with cooldowns
+│       ├── anomaly.py              # Isolation Forest anomaly detection
+│       ├── llm_service.py          # OpenAI-compatible MLX LLM client
+│       └── context_builder.py      # Market context / prompt builder for AI
 ├── Implementation/
 │   ├── producer/
 │   │   ├── coinbase_producer.py    # Single-exchange producer (Coinbase only)
@@ -409,7 +416,9 @@ cryto-streaming-pipeline/
 │   ├── consumer/
 │   │   └── spark_stream.py         # PySpark consumer (windowed aggregations)
 │   ├── dashboard/
-│   │   ├── api_server.py           # Flask REST API backend
+│   │   ├── api_server.py           # Flask REST API backend (orchestrator)
+│   │   ├── analytics.py            # Pure compute functions (metrics, arbitrage, etc.)
+│   │   ├── ai_routes.py            # AI assistant Flask Blueprint
 │   │   └── web/
 │   │       ├── index.html          # Dashboard HTML frontend
 │   │       ├── css/styles.css      # Dark theme styles
