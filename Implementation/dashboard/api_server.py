@@ -50,6 +50,9 @@ from analytics import (  # noqa: E402
     compute_candles as _compute_candles,
     compute_timeseries as _compute_timeseries,
     compute_volume_spikes as _compute_volume_spikes,
+    compute_sentiment_summary as _compute_sentiment_summary,
+    compute_sentiment_by_symbol as _compute_sentiment_by_symbol,
+    compute_sentiment_timeseries as _compute_sentiment_timeseries,
 )
 from ai_routes import ai_bp, start_insight_loop  # noqa: E402
 
@@ -72,6 +75,18 @@ _state = {
     "anomaly_detector": None,
 }
 _state_lock = threading.Lock()
+
+# ── News pipeline shared state ────────────────────────────────────────
+_news_state = {
+    "consumer": None,
+    "events": deque(),
+    "kafka_error": None,
+    "running": True,
+}
+_news_lock = threading.Lock()
+
+NEWS_MAX_ARTICLES = 200
+NEWS_RETENTION_MINUTES = 30
 
 WINDOW_MINUTES = 3
 MAX_RETENTION_MINUTES = 10
@@ -201,11 +216,90 @@ def _poll_and_ingest():
             time.sleep(2)
 
 
+# ── News Kafka ingestion ──────────────────────────────────────────────
+
+def _poll_news():
+    """Background thread: poll Kafka news topic and update news state."""
+    config = get_config()
+    if not config.news_enabled:
+        return
+    consumer = None
+
+    while _news_state["running"]:
+        if consumer is None:
+            try:
+                consumer = KafkaConsumer(
+                    config.topic_news,
+                    bootstrap_servers=[config.kafka_server],
+                    group_id="crypto-dashboard-news",
+                    auto_offset_reset="latest",
+                    enable_auto_commit=True,
+                    value_deserializer=lambda v: json.loads(v.decode("utf-8")),
+                    session_timeout_ms=30000,
+                    heartbeat_interval_ms=5000,
+                    request_timeout_ms=40000,
+                )
+            except Exception:
+                log.exception("Failed to connect news consumer")
+                consumer = None
+                time.sleep(5)
+                continue
+            with _news_lock:
+                _news_state["consumer"] = consumer
+                _news_state["events"] = deque()
+                _news_state["kafka_error"] = None
+
+        try:
+            polled = consumer.poll(timeout_ms=2000, max_records=100)
+            messages = []
+            for records in polled.values():
+                for record in records:
+                    messages.append(record.value)
+
+            with _news_lock:
+                _news_state["kafka_error"] = None
+                for msg in messages:
+                    msg["_ingested_at"] = datetime.now(timezone.utc).isoformat()
+                    _news_state["events"].append(msg)
+
+                while len(_news_state["events"]) > NEWS_MAX_ARTICLES:
+                    _news_state["events"].popleft()
+
+                cutoff = datetime.now(timezone.utc) - timedelta(minutes=NEWS_RETENTION_MINUTES)
+                while _news_state["events"]:
+                    oldest = _news_state["events"][0]
+                    pub = oldest.get("published_at", oldest.get("fetched_at", ""))
+                    try:
+                        pub_dt = datetime.fromisoformat(pub.replace("Z", "+00:00"))
+                    except (ValueError, AttributeError):
+                        _news_state["events"].popleft()
+                        continue
+                    if pub_dt < cutoff:
+                        _news_state["events"].popleft()
+                    else:
+                        break
+
+        except Exception as e:
+            with _news_lock:
+                _news_state["kafka_error"] = str(e)
+            try:
+                consumer.close()
+            except Exception:
+                pass
+            consumer = None
+            time.sleep(2)
+
+
 # ── State access ─────────────────────────────────────────────────────
 
 def _get_events():
     with _state_lock:
         return list(_state["events"]), dict(_state)
+
+
+def _get_news_events():
+    with _news_lock:
+        return list(_news_state["events"])
 
 
 # ── Dashboard payload builder ────────────────────────────────────────
@@ -297,6 +391,17 @@ def _build_dashboard_payload(window_minutes: int, exchange_filter: str) -> dict:
     total_volume = sum(m["total_volume_qty"] for m in metrics)
     live_symbols = len(metrics)
 
+    news_events = _get_news_events()
+    sentiment_summary = _compute_sentiment_summary(news_events)
+    sentiment_by_symbol = _compute_sentiment_by_symbol(news_events)
+    sentiment_timeseries = _compute_sentiment_timeseries(news_events)
+
+    recent_news = sorted(
+        news_events,
+        key=lambda n: n.get("published_at", ""),
+        reverse=True,
+    )[:20]
+
     return {
         "metrics": metrics,
         "timeseries": timeseries,
@@ -311,6 +416,10 @@ def _build_dashboard_payload(window_minutes: int, exchange_filter: str) -> dict:
         "volume_by_exchange_ts": volume_by_exchange_ts,
         "heatmap_data": heatmap_data,
         "recent_trades": recent_trades,
+        "news": recent_news,
+        "sentiment_summary": sentiment_summary,
+        "sentiment_by_symbol": sentiment_by_symbol,
+        "sentiment_timeseries": sentiment_timeseries,
         "status": {
             "kafka_status": kafka_status,
             "kafka_error": kafka_error,
@@ -476,6 +585,37 @@ def candles_endpoint():
     return jsonify({"candles": _compute_candles(events, symbol or None)})
 
 
+@app.route("/api/news")
+def news_endpoint():
+    """Recent news articles with sentiment, optionally filtered by currency."""
+    currency = request.args.get("currency", "").strip().upper()
+    limit = int(request.args.get("limit", "50"))
+    limit = max(1, min(limit, 200))
+
+    news_events = _get_news_events()
+    if currency:
+        news_events = [n for n in news_events if currency in n.get("currencies", [])]
+
+    news_events = sorted(
+        news_events,
+        key=lambda n: n.get("published_at", ""),
+        reverse=True,
+    )[:limit]
+
+    return jsonify({"articles": news_events, "count": len(news_events)})
+
+
+@app.route("/api/sentiment")
+def sentiment_endpoint():
+    """Aggregated sentiment per symbol and overall market."""
+    news_events = _get_news_events()
+    return jsonify({
+        "summary": _compute_sentiment_summary(news_events),
+        "by_symbol": _compute_sentiment_by_symbol(news_events),
+        "timeseries": _compute_sentiment_timeseries(news_events),
+    })
+
+
 @app.route("/api/dashboard")
 def dashboard():
     """Single endpoint returning all dashboard data."""
@@ -496,6 +636,11 @@ def main():
 
     # Kafka ingestion thread
     threading.Thread(target=_poll_and_ingest, daemon=True).start()
+
+    # News pipeline ingestion thread
+    config_obj = get_config()
+    if config_obj.news_enabled:
+        threading.Thread(target=_poll_news, daemon=True).start()
 
     # Alert notification thread (decoupled from API request cycle)
     threading.Thread(target=_alert_loop, daemon=True).start()

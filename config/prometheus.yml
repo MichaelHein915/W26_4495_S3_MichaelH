@@ -25,3 +25,9 @@ scrape_configs:
       - targets: ["consumer:9091"]
     metrics_path: "/"
     scrape_interval: 10s
+
+  - job_name: "crypto-news-producer"
+    static_configs:
+      - targets: ["news-producer:9094"]
+    metrics_path: "/"
+    scrape_interval: 10s

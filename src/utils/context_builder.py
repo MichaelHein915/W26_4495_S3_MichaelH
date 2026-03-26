@@ -88,6 +88,40 @@ def build_market_context(payload: dict) -> str:
         lines = [f"- {ex}: {count} trades" for ex, count in sorted(ex_counts.items())]
         parts.append("\nEXCHANGE ACTIVITY:\n" + "\n".join(lines))
 
+    sentiment_summary = payload.get("sentiment_summary", {})
+    if sentiment_summary and sentiment_summary.get("total", 0) > 0:
+        s = sentiment_summary
+        parts.append(
+            f"\nNEWS SENTIMENT (overall):\n"
+            f"- Market sentiment: {s['label'].upper()} (avg compound: {s['avg_compound']:+.4f})\n"
+            f"- Distribution: {s['positive']} positive, {s['negative']} negative, "
+            f"{s['neutral']} neutral ({s['total']} articles)"
+        )
+
+    sentiment_by_sym = payload.get("sentiment_by_symbol", [])
+    if sentiment_by_sym:
+        lines = []
+        for sb in sentiment_by_sym[:10]:
+            lines.append(
+                f"- {sb['currency']}: {sb['label']} "
+                f"(compound={sb['avg_compound']:+.4f}, {sb['article_count']} articles)"
+            )
+        parts.append("\nSENTIMENT BY SYMBOL:\n" + "\n".join(lines))
+
+    news = payload.get("news", [])
+    if news:
+        top_news = news[:3]
+        lines = []
+        for n in top_news:
+            s = n.get("sentiment", {})
+            lbl = s.get("label", "neutral")
+            compound = s.get("compound", 0.0)
+            lines.append(
+                f"- [{lbl}, {compound:+.2f}] {n.get('title', 'N/A')} "
+                f"({', '.join(n.get('currencies', []))})"
+            )
+        parts.append(f"\nTOP HEADLINES ({len(top_news)}):\n" + "\n".join(lines))
+
     recent = payload.get("recent_trades", [])
     if recent:
         top5 = recent[:5]

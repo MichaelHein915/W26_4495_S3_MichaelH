@@ -306,6 +306,107 @@ def compute_timeseries(events: list) -> list[dict]:
     return ts.to_dict(orient="records")
 
 
+def compute_sentiment_summary(news_events: list) -> dict:
+    """Market-wide sentiment: avg compound, distribution counts, trending label."""
+    if not news_events:
+        return {
+            "avg_compound": 0.0,
+            "positive": 0,
+            "negative": 0,
+            "neutral": 0,
+            "total": 0,
+            "label": "neutral",
+        }
+    compounds = []
+    pos = neg = neu = 0
+    for ev in news_events:
+        s = ev.get("sentiment", {})
+        c = s.get("compound", 0.0)
+        compounds.append(c)
+        lbl = s.get("label", "neutral")
+        if lbl == "positive":
+            pos += 1
+        elif lbl == "negative":
+            neg += 1
+        else:
+            neu += 1
+
+    avg = sum(compounds) / len(compounds)
+    if avg >= 0.05:
+        label = "positive"
+    elif avg <= -0.05:
+        label = "negative"
+    else:
+        label = "neutral"
+
+    return {
+        "avg_compound": round(avg, 4),
+        "positive": pos,
+        "negative": neg,
+        "neutral": neu,
+        "total": len(compounds),
+        "label": label,
+    }
+
+
+def compute_sentiment_by_symbol(news_events: list) -> list[dict]:
+    """Per-currency sentiment breakdown from news articles."""
+    if not news_events:
+        return []
+    symbol_scores: dict[str, list[float]] = {}
+    symbol_counts: dict[str, dict[str, int]] = {}
+
+    for ev in news_events:
+        s = ev.get("sentiment", {})
+        compound = s.get("compound", 0.0)
+        lbl = s.get("label", "neutral")
+        for currency in ev.get("currencies", []):
+            symbol_scores.setdefault(currency, []).append(compound)
+            counts = symbol_counts.setdefault(currency, {"positive": 0, "negative": 0, "neutral": 0})
+            counts[lbl] = counts.get(lbl, 0) + 1
+
+    result = []
+    for sym in sorted(symbol_scores):
+        scores = symbol_scores[sym]
+        avg = sum(scores) / len(scores)
+        counts = symbol_counts.get(sym, {})
+        result.append({
+            "currency": sym,
+            "avg_compound": round(avg, 4),
+            "article_count": len(scores),
+            "positive": counts.get("positive", 0),
+            "negative": counts.get("negative", 0),
+            "neutral": counts.get("neutral", 0),
+            "label": "positive" if avg >= 0.05 else ("negative" if avg <= -0.05 else "neutral"),
+        })
+    return result
+
+
+def compute_sentiment_timeseries(news_events: list) -> list[dict]:
+    """Sentiment compound score in 5-min buckets for trend chart."""
+    if not news_events:
+        return []
+    df = pd.DataFrame(news_events)
+    if "published_at" not in df.columns:
+        return []
+    df["published_at"] = pd.to_datetime(df["published_at"], utc=True, errors="coerce")
+    df = df.dropna(subset=["published_at"])
+    if df.empty:
+        return []
+
+    df["compound"] = df["sentiment"].apply(lambda s: s.get("compound", 0.0) if isinstance(s, dict) else 0.0)
+    ts = (
+        df.set_index("published_at")
+        .resample("5min")
+        .agg(avg_compound=("compound", "mean"), article_count=("compound", "count"))
+        .reset_index()
+        .dropna(subset=["avg_compound"])
+    )
+    ts["published_at"] = ts["published_at"].dt.strftime("%Y-%m-%dT%H:%M:%S")
+    ts["avg_compound"] = ts["avg_compound"].round(4)
+    return ts.to_dict(orient="records")
+
+
 def compute_volume_spikes(
     metrics: list[dict], volume_history: dict, threshold: float = 2.0
 ) -> tuple[list[dict], dict]:

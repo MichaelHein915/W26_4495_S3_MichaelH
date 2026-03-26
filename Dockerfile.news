@@ -1,0 +1,16 @@
+# News pipeline producer image
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/ src/
+COPY config/ config/
+COPY Implementation/news/ Implementation/news/
+
+ENV PYTHONPATH=/app/src:/app/Implementation/news
+ENV PYTHONUNBUFFERED=1
+
+CMD ["python", "Implementation/news/news_producer.py"]

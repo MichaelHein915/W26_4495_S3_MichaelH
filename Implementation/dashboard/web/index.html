@@ -212,14 +212,15 @@
                 <th class="sortable" data-sort="vwap_usd" data-label="VWAP" title="Volume-Weighted Average Price">VWAP</th>
                 <th class="sortable" data-sort="volatility_usd" data-label="Volatility" title="Std dev of price">Volatility</th>
                 <th class="sortable" data-sort="total_volume_qty" data-label="Volume">Volume</th>
+                <th data-label="Sentiment" title="News sentiment for this symbol">Sentiment</th>
               </tr>
             </thead>
             <tbody id="metricsBody">
-              <tr class="skeleton-row"><td colspan="8"><div class="skeleton-line"></div></td></tr>
-              <tr class="skeleton-row"><td colspan="8"><div class="skeleton-line"></div></td></tr>
-              <tr class="skeleton-row"><td colspan="8"><div class="skeleton-line"></div></td></tr>
-              <tr class="skeleton-row"><td colspan="8"><div class="skeleton-line"></div></td></tr>
-              <tr class="skeleton-row"><td colspan="8"><div class="skeleton-line"></div></td></tr>
+              <tr class="skeleton-row"><td colspan="9"><div class="skeleton-line"></div></td></tr>
+              <tr class="skeleton-row"><td colspan="9"><div class="skeleton-line"></div></td></tr>
+              <tr class="skeleton-row"><td colspan="9"><div class="skeleton-line"></div></td></tr>
+              <tr class="skeleton-row"><td colspan="9"><div class="skeleton-line"></div></td></tr>
+              <tr class="skeleton-row"><td colspan="9"><div class="skeleton-line"></div></td></tr>
             </tbody>
           </table>
         </div>
@@ -260,6 +261,46 @@
         </div>
         <p class="section-desc">Price spread between exchanges exceeds threshold — buy low, sell high</p>
         <div class="arbitrage-list" id="arbitrageList"></div>
+      </section>
+
+      <!-- News & Sentiment -->
+      <section class="section news-sentiment-section" id="newsSentimentSection">
+        <div class="section-header">
+          <div class="section-icon" style="background: var(--accent-purple-dim);">📰</div>
+          <h2>News &amp; Sentiment</h2>
+        </div>
+        <div class="sentiment-overview" id="sentimentOverview">
+          <div class="sentiment-gauge-wrap">
+            <div class="sentiment-gauge-label">Market Sentiment</div>
+            <div class="sentiment-gauge" id="sentimentGauge">
+              <div class="sentiment-gauge-fill" id="sentimentGaugeFill"></div>
+              <div class="sentiment-gauge-needle" id="sentimentGaugeNeedle"></div>
+            </div>
+            <div class="sentiment-gauge-labels">
+              <span class="sg-label bearish">Bearish</span>
+              <span class="sg-label neutral">Neutral</span>
+              <span class="sg-label bullish">Bullish</span>
+            </div>
+            <div class="sentiment-score" id="sentimentScore">--</div>
+          </div>
+          <div class="sentiment-stats" id="sentimentStats">
+            <div class="sentiment-stat positive">
+              <span class="stat-count" id="sentimentPosCount">0</span>
+              <span class="stat-label">Positive</span>
+            </div>
+            <div class="sentiment-stat neutral">
+              <span class="stat-count" id="sentimentNeuCount">0</span>
+              <span class="stat-label">Neutral</span>
+            </div>
+            <div class="sentiment-stat negative">
+              <span class="stat-count" id="sentimentNegCount">0</span>
+              <span class="stat-label">Negative</span>
+            </div>
+          </div>
+        </div>
+        <div class="news-feed" id="newsFeed">
+          <div class="news-empty">No news articles yet. Enable NEWS_ENABLED and set CRYPTOPANIC_API_KEY.</div>
+        </div>
       </section>
 
       <!-- Ticker -->

@@ -57,6 +57,13 @@ class AppConfig:
     alert_anomaly_enabled: bool = True
     anomaly_contamination: float = 0.05
 
+    # News pipeline
+    topic_news: str = "crypto.news.sentiment"
+    news_enabled: bool = False
+    news_poll_interval_sec: int = 60
+    cryptopanic_api_key: str = ""
+    news_sources: list[str] = field(default_factory=lambda: ["rss"])
+
     # AI Assistant (MLX)
     ai_enabled: bool = False
     mlx_server_url: str = "http://localhost:8080"
@@ -125,6 +132,11 @@ def get_config() -> AppConfig:
         alert_price_thresholds=_parse_price_thresholds(os.getenv("ALERT_PRICE_THRESHOLDS", "")),
         alert_anomaly_enabled=os.getenv("ALERT_ANOMALY_ENABLED", "true").lower() in ("1", "true", "yes"),
         anomaly_contamination=float(os.getenv("ANOMALY_CONTAMINATION", "0.05")),
+        topic_news=os.getenv("KAFKA_TOPIC_NEWS", "crypto.news.sentiment"),
+        news_enabled=os.getenv("NEWS_ENABLED", "false").lower() in ("1", "true", "yes"),
+        news_poll_interval_sec=int(os.getenv("NEWS_POLL_INTERVAL_SEC", "60")),
+        cryptopanic_api_key=os.getenv("CRYPTOPANIC_API_KEY", ""),
+        news_sources=_parse_symbols(os.getenv("NEWS_SOURCES", "rss")),
         ai_enabled=os.getenv("AI_ENABLED", "false").lower() in ("1", "true", "yes"),
         mlx_server_url=os.getenv("MLX_SERVER_URL", "http://localhost:8080"),
         mlx_model=os.getenv("MLX_MODEL", "mlx-community/Llama-3.2-3B-Instruct-4bit"),

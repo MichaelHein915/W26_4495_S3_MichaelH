@@ -77,6 +77,30 @@ SINK_FLUSH_ERRORS = Counter(
 )
 
 
+# ---------------------------------------------------------------------------
+# News pipeline metrics
+# ---------------------------------------------------------------------------
+NEWS_ARTICLES_FETCHED = Counter(
+    "crypto_news_articles_fetched_total",
+    "Articles fetched from news sources",
+    ["source"],
+)
+NEWS_ARTICLES_PUBLISHED = Counter(
+    "crypto_news_articles_published_total",
+    "Articles published to Kafka news topic",
+)
+NEWS_FETCH_ERRORS = Counter(
+    "crypto_news_fetch_errors_total",
+    "News source fetch failures",
+    ["source"],
+)
+NEWS_SENTIMENT_DISTRIBUTION = Counter(
+    "crypto_news_sentiment_total",
+    "Sentiment label distribution of published articles",
+    ["label"],
+)
+
+
 def start_metrics_server(port: int | None = None, default: int = 9090) -> None:
     """Start Prometheus metrics HTTP server in a background daemon thread."""
     p = port if port is not None else int(os.environ.get("METRICS_PORT", str(default)))

@@ -64,6 +64,14 @@ const anomalyAlertsSectionEl = el('anomalyAlertsSection');
 const toastContainerEl = el('toastContainer');
 const tickerTrackEl = el('tickerTrack');
 const tickerSectionEl = el('tickerSection');
+const newsFeedEl = el('newsFeed');
+const sentimentGaugeNeedleEl = el('sentimentGaugeNeedle');
+const sentimentScoreEl = el('sentimentScore');
+const sentimentPosCountEl = el('sentimentPosCount');
+const sentimentNeuCountEl = el('sentimentNeuCount');
+const sentimentNegCountEl = el('sentimentNegCount');
+const newsSentimentSectionEl = el('newsSentimentSection');
+let sentimentBySymbolCache = {};
 const watchlistGridEl = el('watchlistGrid');
 
 function setStatusClass(elem, status) {
@@ -528,8 +536,8 @@ function renderMetricsTable(metrics) {
   if (!displayed.length) {
     const searchActive = symbolSearchEl?.value?.trim() || directionFilter !== 'all';
     metricsBodyEl.innerHTML = searchActive
-      ? '<tr class="empty-row"><td colspan="8"><div class="empty-state"><span class="empty-state-icon">🔍</span><div class="empty-state-title">No symbols match your filter</div><div class="empty-state-desc">Try a different search term or direction filter</div></div></td></tr>'
-      : '<tr class="empty-row"><td colspan="8"><div class="empty-state"><span class="empty-state-icon">📊</span><div class="empty-state-title">Waiting for trades…</div><div class="empty-state-desc">Start the producer to see live metrics. Data appears as trades stream in.</div></div></td></tr>';
+      ? '<tr class="empty-row"><td colspan="9"><div class="empty-state"><span class="empty-state-icon">🔍</span><div class="empty-state-title">No symbols match your filter</div><div class="empty-state-desc">Try a different search term or direction filter</div></div></td></tr>'
+      : '<tr class="empty-row"><td colspan="9"><div class="empty-state"><span class="empty-state-icon">📊</span><div class="empty-state-title">Waiting for trades…</div><div class="empty-state-desc">Start the producer to see live metrics. Data appears as trades stream in.</div></div></td></tr>';
     return;
   }
   metricsBodyEl.innerHTML = displayed.map((m) => {
@@ -550,6 +558,7 @@ function renderMetricsTable(metrics) {
       <td>${fmtUsd(m.vwap_usd)}</td>
       <td>${fmtUsd(m.volatility_usd)}</td>
       <td>${fmtVol(m.total_volume_qty)}</td>
+      <td>${getSentimentBadge(m.product_id)}</td>
     </tr>`;
   }).join('');
 
@@ -613,6 +622,94 @@ function renderAnomalyAlerts(anomalies) {
     `score ${a.anomaly_score} · trades ${a.trade_count} · vol $${a.volatility_usd?.toFixed(2) ?? '-'} · ` +
     `change ${a.price_change_pct >= 0 ? '+' : ''}${a.price_change_pct?.toFixed(2) ?? '-'}%</div>`
   ).join('');
+}
+
+// ─── News & Sentiment ────────────────────────────────────────────────
+
+function timeAgo(isoStr) {
+  if (!isoStr) return '';
+  try {
+    const then = new Date(isoStr);
+    const now = Date.now();
+    const diff = Math.max(0, Math.floor((now - then) / 1000));
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+  } catch { return ''; }
+}
+
+function renderSentimentGauge(summary) {
+  if (!sentimentGaugeNeedleEl || !sentimentScoreEl) return;
+  const compound = summary?.avg_compound ?? 0;
+  const pct = ((compound + 1) / 2) * 100;
+  sentimentGaugeNeedleEl.style.left = `${pct}%`;
+
+  const label = summary?.label || 'neutral';
+  const color = label === 'positive' ? 'var(--accent-green)' :
+                label === 'negative' ? 'var(--accent-red)' : 'var(--accent-yellow)';
+  sentimentScoreEl.textContent = `${compound >= 0 ? '+' : ''}${compound.toFixed(3)}`;
+  sentimentScoreEl.style.color = color;
+
+  if (sentimentPosCountEl) sentimentPosCountEl.textContent = summary?.positive ?? 0;
+  if (sentimentNeuCountEl) sentimentNeuCountEl.textContent = summary?.neutral ?? 0;
+  if (sentimentNegCountEl) sentimentNegCountEl.textContent = summary?.negative ?? 0;
+}
+
+function renderNewsFeed(news) {
+  if (!newsFeedEl) return;
+  if (!news?.length) {
+    newsFeedEl.innerHTML = '<div class="news-empty">No news articles yet. Enable NEWS_ENABLED and set CRYPTOPANIC_API_KEY.</div>';
+    return;
+  }
+  newsFeedEl.innerHTML = news.map((n) => {
+    const s = n.sentiment || {};
+    const lbl = s.label || 'neutral';
+    const currencies = (n.currencies || []).map(c =>
+      `<span class="news-currency-tag">${c}</span>`
+    ).join('');
+    return `<div class="news-card">
+      <span class="news-sentiment-pill ${lbl}">${lbl}</span>
+      <div class="news-card-body">
+        <div class="news-card-title"><a href="${n.url || '#'}" target="_blank" rel="noopener">${n.title || 'Untitled'}</a></div>
+        <div class="news-card-meta">
+          <span>${n.domain || ''}</span>
+          <span>${timeAgo(n.published_at)}</span>
+          <div class="news-card-currencies">${currencies}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderNewsSentiment(data) {
+  const summary = data?.sentiment_summary;
+  const news = data?.news;
+  const bySymbol = data?.sentiment_by_symbol || [];
+
+  sentimentBySymbolCache = {};
+  bySymbol.forEach(s => { sentimentBySymbolCache[s.currency] = s; });
+
+  const hasNews = news && news.length > 0;
+  if (newsSentimentSectionEl) {
+    newsSentimentSectionEl.style.display = hasNews ? 'block' : 'none';
+  }
+
+  if (hasNews) {
+    renderSentimentGauge(summary);
+    renderNewsFeed(news);
+  }
+}
+
+function getSentimentBadge(productId) {
+  const base = productId ? productId.split('-')[0] : '';
+  const s = sentimentBySymbolCache[base];
+  if (!s) return '<span class="sentiment-badge neutral"><span class="sentiment-dot neutral"></span> --</span>';
+  const lbl = s.label || 'neutral';
+  const display = lbl === 'positive' ? '+' + s.avg_compound.toFixed(2) :
+                  lbl === 'negative' ? s.avg_compound.toFixed(2) :
+                  s.avg_compound.toFixed(2);
+  return `<span class="sentiment-badge ${lbl}"><span class="sentiment-dot ${lbl}"></span> ${display}</span>`;
 }
 
 function renderArbitrage(arbitrage) {
@@ -1563,6 +1660,7 @@ async function refresh() {
   renderPriceAlerts(data.price_alerts);
   renderAnomalyAlerts(data.anomalies);
   renderArbitrage(data.arbitrage);
+  renderNewsSentiment(data);
   renderTicker(data.recent_trades);
   updateBarChart(data.metrics);
   updateDonutChart(data.metrics);

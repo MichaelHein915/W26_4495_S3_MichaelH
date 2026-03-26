@@ -75,6 +75,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       KAFKA_TOPIC_RAW: crypto.trades.raw
       CHECKPOINT_DIR: /app/data/checkpoints/raw_console
+      RESET_CHECKPOINT: "true"
       METRICS_PORT: 9091
     ports:
       - "9091:9091"
@@ -104,6 +105,28 @@ services:
       AI_INSIGHT_INTERVAL_SEC: "60"
     ports:
       - "5000:5000"
+    networks:
+      - crypto-network
+    restart: unless-stopped
+
+  news-producer:
+    build:
+      context: .
+      dockerfile: Dockerfile.news
+    container_name: crypto-news-producer
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_TOPIC_NEWS: crypto.news.sentiment
+      NEWS_ENABLED: "true"
+      NEWS_POLL_INTERVAL_SEC: "60"
+      CRYPTOPANIC_API_KEY: ${CRYPTOPANIC_API_KEY:-}
+      NEWS_SOURCES: rss
+      METRICS_PORT: 9094
+    ports:
+      - "9094:9094"
     networks:
       - crypto-network
     restart: unless-stopped
