@@ -21,7 +21,7 @@
         <div class="header-logo">⚡</div>
         <h1>CryptoStream</h1>
         <nav class="header-nav">
-          <a href="/" class="nav-link active">Dashboard</a>
+          <a href="/dashboard" class="nav-link active">Dashboard</a>
           <a href="/news" class="nav-link">News</a>
         </nav>
       </div>
@@ -53,6 +53,82 @@
           <span>⌨</span>
         </button>
         <span class="updated-at" id="updatedAt">--:--:-- UTC</span>
+        <div class="profile-wrapper">
+          <button class="profile-avatar-btn" id="profileBtn" title="User Profile">
+            <span class="profile-avatar-initials" id="profileInitials">CS</span>
+          </button>
+          <div class="profile-dropdown" id="profileDropdown">
+            <div class="profile-dropdown-header">
+              <div class="profile-avatar-lg" id="profileAvatarLg">
+                <span class="profile-avatar-initials-lg" id="profileInitialsLg">CS</span>
+              </div>
+              <div class="profile-header-info">
+                <div class="profile-display-name" id="profileDisplayName">CryptoStream User</div>
+                <div class="profile-joined" id="profileJoined">Member since --</div>
+              </div>
+            </div>
+            <div class="profile-dropdown-body">
+              <div class="profile-field">
+                <label for="profileNameInput">Display Name</label>
+                <input type="text" id="profileNameInput" class="profile-input" placeholder="Enter your name" maxlength="30">
+              </div>
+              <div class="profile-field">
+                <label for="profileEmailInput">Email</label>
+                <input type="email" id="profileEmailInput" class="profile-input" placeholder="your@email.com" maxlength="60">
+              </div>
+              <div class="profile-field">
+                <label>Avatar Color</label>
+                <div class="profile-color-picker" id="profileColorPicker">
+                  <button class="color-swatch" data-color="#3b82f6" style="background:#3b82f6" title="Blue"></button>
+                  <button class="color-swatch" data-color="#22c55e" style="background:#22c55e" title="Green"></button>
+                  <button class="color-swatch" data-color="#a855f7" style="background:#a855f7" title="Purple"></button>
+                  <button class="color-swatch" data-color="#ef4444" style="background:#ef4444" title="Red"></button>
+                  <button class="color-swatch" data-color="#f97316" style="background:#f97316" title="Orange"></button>
+                  <button class="color-swatch" data-color="#eab308" style="background:#eab308" title="Yellow"></button>
+                  <button class="color-swatch" data-color="#06b6d4" style="background:#06b6d4" title="Cyan"></button>
+                  <button class="color-swatch" data-color="#ec4899" style="background:#ec4899" title="Pink"></button>
+                </div>
+              </div>
+              <div class="profile-field">
+                <label for="profileCurrency">Preferred Currency</label>
+                <select id="profileCurrency" class="profile-select">
+                  <option value="USD">USD ($)</option>
+                  <option value="EUR">EUR (€)</option>
+                  <option value="GBP">GBP (£)</option>
+                  <option value="JPY">JPY (¥)</option>
+                  <option value="BTC">BTC (₿)</option>
+                </select>
+              </div>
+              <div class="profile-field">
+                <label for="profileDefaultExchange">Default Exchange</label>
+                <select id="profileDefaultExchange" class="profile-select">
+                  <option value="">All Exchanges</option>
+                  <option value="coinbase">Coinbase</option>
+                  <option value="binance">Binance</option>
+                  <option value="kraken">Kraken</option>
+                </select>
+              </div>
+              <div class="profile-stats">
+                <div class="profile-stat">
+                  <span class="profile-stat-value" id="profileWatchlistCount">0</span>
+                  <span class="profile-stat-label">Watchlist</span>
+                </div>
+                <div class="profile-stat">
+                  <span class="profile-stat-value" id="profileSessionCount">0</span>
+                  <span class="profile-stat-label">Sessions</span>
+                </div>
+                <div class="profile-stat">
+                  <span class="profile-stat-value" id="profileThemeLabel">Dark</span>
+                  <span class="profile-stat-label">Theme</span>
+                </div>
+              </div>
+            </div>
+            <div class="profile-dropdown-footer">
+              <button class="profile-save-btn" id="profileSaveBtn">Save Profile</button>
+              <button class="profile-reset-btn" id="profileResetBtn">Reset</button>
+            </div>
+          </div>
+        </div>
       </div>
     </header>
 

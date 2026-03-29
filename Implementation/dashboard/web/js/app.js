@@ -1590,6 +1590,8 @@ document.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
 
   if (e.key === 'Escape') {
+    const pd = el('profileDropdown');
+    if (pd && pd.classList.contains('open')) { pd.classList.remove('open'); el('profileBtn')?.classList.remove('active'); return; }
     if (el('shortcutsModal').classList.contains('open')) { toggleShortcutsModal(); return; }
     if (el('fullscreenOverlay').classList.contains('open')) { closeFullscreen(); return; }
     if (aiChatOpen) { toggleAiChat(); return; }
@@ -1958,3 +1960,189 @@ bindSuggestions();
 setInterval(() => { if (aiChatOpen) fetchAiInsight(); }, 60000);
 
 setTimeout(checkAiHealth, 3000);
+
+/* ═══════════════════════════════════════════════════════════════════
+   User Profile
+   ═══════════════════════════════════════════════════════════════════ */
+
+const PROFILE_STORAGE_KEY = 'cryptostream_profile';
+
+const defaultProfile = {
+  displayName: '',
+  email: '',
+  avatarColor: '#3b82f6',
+  currency: 'USD',
+  defaultExchange: '',
+  joinedAt: new Date().toISOString(),
+  sessionCount: 1,
+};
+
+function loadProfile() {
+  try {
+    const raw = localStorage.getItem(PROFILE_STORAGE_KEY);
+    if (raw) {
+      const p = JSON.parse(raw);
+      p.sessionCount = (p.sessionCount || 0) + 1;
+      localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(p));
+      return p;
+    }
+  } catch (_) {}
+  localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(defaultProfile));
+  return { ...defaultProfile };
+}
+
+function saveProfile(profile) {
+  localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
+}
+
+function getInitials(name) {
+  if (!name || !name.trim()) return 'CS';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  return parts[0].substring(0, 2).toUpperCase();
+}
+
+function formatJoinDate(iso) {
+  try {
+    const d = new Date(iso);
+    return 'Member since ' + d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  } catch (_) {
+    return 'Member';
+  }
+}
+
+function applyProfileToUI(profile) {
+  const initials = getInitials(profile.displayName);
+  const initialsEl = el('profileInitials');
+  const initialsLgEl = el('profileInitialsLg');
+  const avatarBtn = el('profileBtn');
+  const avatarLg = el('profileAvatarLg');
+
+  if (initialsEl) initialsEl.textContent = initials;
+  if (initialsLgEl) initialsLgEl.textContent = initials;
+
+  if (avatarBtn) avatarBtn.style.background = profile.avatarColor || '#3b82f6';
+  if (avatarLg) avatarLg.style.background = profile.avatarColor || '#3b82f6';
+
+  const displayNameEl = el('profileDisplayName');
+  if (displayNameEl) displayNameEl.textContent = profile.displayName || 'CryptoStream User';
+
+  const joinedEl = el('profileJoined');
+  if (joinedEl) joinedEl.textContent = formatJoinDate(profile.joinedAt);
+
+  const nameInput = el('profileNameInput');
+  if (nameInput) nameInput.value = profile.displayName || '';
+
+  const emailInput = el('profileEmailInput');
+  if (emailInput) emailInput.value = profile.email || '';
+
+  const currencySelect = el('profileCurrency');
+  if (currencySelect) currencySelect.value = profile.currency || 'USD';
+
+  const exchSelect = el('profileDefaultExchange');
+  if (exchSelect) exchSelect.value = profile.defaultExchange || '';
+
+  document.querySelectorAll('.color-swatch').forEach((sw) => {
+    sw.classList.toggle('active', sw.dataset.color === profile.avatarColor);
+  });
+
+  const watchlistCount = el('profileWatchlistCount');
+  if (watchlistCount) watchlistCount.textContent = favorites.length;
+
+  const sessionCount = el('profileSessionCount');
+  if (sessionCount) sessionCount.textContent = profile.sessionCount || 1;
+
+  const themeLabel = el('profileThemeLabel');
+  if (themeLabel) {
+    const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+    themeLabel.textContent = isDark ? 'Dark' : 'Light';
+  }
+}
+
+const userProfile = loadProfile();
+
+(function initProfile() {
+  const profileBtn = el('profileBtn');
+  const profileDropdown = el('profileDropdown');
+  if (!profileBtn || !profileDropdown) return;
+
+  applyProfileToUI(userProfile);
+
+  profileBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = profileDropdown.classList.contains('open');
+    profileDropdown.classList.toggle('open', !isOpen);
+    profileBtn.classList.toggle('active', !isOpen);
+    if (!isOpen) {
+      const watchlistCount = el('profileWatchlistCount');
+      if (watchlistCount) watchlistCount.textContent = favorites.length;
+      const themeLabel = el('profileThemeLabel');
+      if (themeLabel) {
+        const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+        themeLabel.textContent = isDark ? 'Dark' : 'Light';
+      }
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!profileDropdown.contains(e.target) && e.target !== profileBtn) {
+      profileDropdown.classList.remove('open');
+      profileBtn.classList.remove('active');
+    }
+  });
+
+  document.querySelectorAll('.color-swatch').forEach((sw) => {
+    sw.addEventListener('click', () => {
+      document.querySelectorAll('.color-swatch').forEach((s) => s.classList.remove('active'));
+      sw.classList.add('active');
+    });
+  });
+
+  const saveBtn = el('profileSaveBtn');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', () => {
+      const nameInput = el('profileNameInput');
+      const emailInput = el('profileEmailInput');
+      const currencySelect = el('profileCurrency');
+      const exchSelect = el('profileDefaultExchange');
+      const activeSwatch = document.querySelector('.color-swatch.active');
+
+      userProfile.displayName = nameInput?.value.trim() || '';
+      userProfile.email = emailInput?.value.trim() || '';
+      userProfile.currency = currencySelect?.value || 'USD';
+      userProfile.defaultExchange = exchSelect?.value || '';
+      if (activeSwatch) userProfile.avatarColor = activeSwatch.dataset.color;
+
+      saveProfile(userProfile);
+      applyProfileToUI(userProfile);
+
+      if (userProfile.defaultExchange && exchangeFilterEl) {
+        exchangeFilterEl.value = userProfile.defaultExchange;
+        exchangeFilter = userProfile.defaultExchange;
+      }
+
+      showToast('Profile saved');
+    });
+  }
+
+  const resetBtn = el('profileResetBtn');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      Object.assign(userProfile, {
+        displayName: '',
+        email: '',
+        avatarColor: '#3b82f6',
+        currency: 'USD',
+        defaultExchange: '',
+      });
+      saveProfile(userProfile);
+      applyProfileToUI(userProfile);
+      showToast('Profile reset');
+    });
+  }
+
+  if (userProfile.defaultExchange && exchangeFilterEl) {
+    exchangeFilterEl.value = userProfile.defaultExchange;
+    exchangeFilter = userProfile.defaultExchange;
+  }
+})();

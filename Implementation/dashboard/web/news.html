@@ -22,7 +22,7 @@
         <div class="header-logo">⚡</div>
         <h1>CryptoStream</h1>
         <nav class="header-nav">
-          <a href="/" class="nav-link">Dashboard</a>
+          <a href="/dashboard" class="nav-link">Dashboard</a>
           <a href="/news" class="nav-link active">News</a>
         </nav>
       </div>
@@ -31,6 +31,11 @@
           <span id="themeIcon">☀</span>
         </button>
         <span class="updated-at" id="updatedAt">--:--:-- UTC</span>
+        <div class="profile-wrapper">
+          <button class="profile-avatar-btn" id="profileBtn" title="User Profile">
+            <span class="profile-avatar-initials" id="profileInitials">CS</span>
+          </button>
+        </div>
       </div>
     </header>
 
@@ -126,5 +131,23 @@
   </div>
 
   <script src="/js/news-page.js"></script>
+  <script>
+    (function(){
+      try {
+        const p = JSON.parse(localStorage.getItem('cryptostream_profile') || '{}');
+        const btn = document.getElementById('profileBtn');
+        const initials = document.getElementById('profileInitials');
+        if (p.displayName) {
+          const parts = p.displayName.trim().split(/\s+/);
+          const ini = parts.length >= 2
+            ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+            : parts[0].substring(0, 2).toUpperCase();
+          if (initials) initials.textContent = ini;
+        }
+        if (p.avatarColor && btn) btn.style.background = p.avatarColor;
+        if (btn) btn.addEventListener('click', () => { window.location.href = '/dashboard'; });
+      } catch(_){}
+    })();
+  </script>
 </body>
 </html>

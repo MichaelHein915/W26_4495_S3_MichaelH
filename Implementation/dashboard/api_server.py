@@ -519,6 +519,11 @@ def _alert_loop():
 # ── Routes ───────────────────────────────────────────────────────────
 
 @app.route("/")
+def landing():
+    return send_from_directory(app.static_folder, "landing.html")
+
+
+@app.route("/dashboard")
 def index():
     return send_from_directory(app.static_folder, "index.html")
 

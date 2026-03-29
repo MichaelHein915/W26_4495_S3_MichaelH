@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CryptoStream — Real-Time Crypto Intelligence Platform</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/landing.css">
+</head>
+<body>
+  <!-- Particle canvas background -->
+  <canvas id="particleCanvas"></canvas>
+
+  <!-- Floating crypto icons (animated) -->
+  <div class="floating-icons" id="floatingIcons" aria-hidden="true"></div>
+
+  <!-- Navigation -->
+  <nav class="nav" id="nav">
+    <div class="nav-inner">
+      <a href="/" class="nav-brand">
+        <span class="nav-logo">⚡</span>
+        <span class="nav-name">CryptoStream</span>
+      </a>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#live-preview">Live Preview</a>
+        <a href="#stats">Stats</a>
+        <a href="#pipeline">Architecture</a>
+        <a href="/dashboard" class="nav-cta">Launch Dashboard</a>
+      </div>
+      <button class="nav-mobile-toggle" id="navMobileToggle" aria-label="Toggle menu">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Mobile menu -->
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="#features">Features</a>
+    <a href="#live-preview">Live Preview</a>
+    <a href="#stats">Stats</a>
+    <a href="#pipeline">Architecture</a>
+    <a href="/dashboard" class="nav-cta">Launch Dashboard</a>
+  </div>
+
+  <!-- Hero Section -->
+  <section class="hero" id="hero">
+    <div class="hero-content">
+      <div class="hero-badge reveal">
+        <span class="badge-dot"></span>
+        Real-time streaming powered by Apache Kafka
+      </div>
+      <h1 class="hero-title reveal">
+        <span class="hero-line">The Future of</span>
+        <span class="hero-line gradient-text">Crypto Intelligence</span>
+        <span class="hero-line">Is Here</span>
+      </h1>
+      <p class="hero-subtitle reveal">
+        Stream, analyze, and act on cryptocurrency data in real-time.
+        Multi-exchange ingestion, AI-powered insights, and ML anomaly detection
+        — all in one platform.
+      </p>
+      <div class="hero-actions reveal">
+        <a href="/dashboard" class="btn btn-primary">
+          <span class="btn-glow"></span>
+          Launch Dashboard
+          <span class="btn-arrow">→</span>
+        </a>
+        <a href="#features" class="btn btn-secondary">Explore Features</a>
+      </div>
+      <div class="hero-metrics reveal">
+        <div class="hero-metric">
+          <span class="hero-metric-value" data-count="3">0</span>
+          <span class="hero-metric-label">Exchanges</span>
+        </div>
+        <div class="hero-metric">
+          <span class="hero-metric-value" data-count="50">0</span>
+          <span class="hero-metric-label">Trading Pairs</span>
+        </div>
+        <div class="hero-metric">
+          <span class="hero-metric-value" data-suffix="ms" data-count="200">0</span>
+          <span class="hero-metric-label">Latency</span>
+        </div>
+        <div class="hero-metric">
+          <span class="hero-metric-value" data-count="24" data-suffix="/7">0</span>
+          <span class="hero-metric-label">Monitoring</span>
+        </div>
+      </div>
+    </div>
+    <div class="hero-visual reveal">
+      <div class="hero-glow"></div>
+      <div class="hero-chart-frame">
+        <div class="chart-frame-header">
+          <div class="chart-frame-dots">
+            <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+          </div>
+          <span class="chart-frame-title">BTC-USD — Live</span>
+          <span class="chart-frame-badge">STREAMING</span>
+        </div>
+        <div id="heroChart" class="hero-chart-body"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Ticker marquee -->
+  <div class="ticker-marquee" id="tickerMarquee">
+    <div class="ticker-track" id="landingTickerTrack"></div>
+  </div>
+
+  <!-- Features Section -->
+  <section class="features" id="features">
+    <div class="section-container">
+      <div class="section-label reveal">Features</div>
+      <h2 class="section-title reveal">Everything You Need for<br><span class="gradient-text">Crypto Market Intelligence</span></h2>
+      <p class="section-desc reveal">From data ingestion to actionable insights — a complete streaming pipeline.</p>
+
+      <div class="features-grid">
+        <div class="feature-card reveal" data-delay="0">
+          <div class="feature-icon blue">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          </div>
+          <h3>Real-Time Streaming</h3>
+          <p>Sub-second data ingestion from Coinbase, Binance, and Kraken via Apache Kafka with guaranteed delivery.</p>
+        </div>
+
+        <div class="feature-card reveal" data-delay="100">
+          <div class="feature-icon green">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 21H4.6c-.56 0-.84 0-1.054-.109a1 1 0 01-.437-.437C3 20.24 3 19.96 3 19.4V3m17 7l-4-4-4.5 4.5L8 7"/></svg>
+          </div>
+          <h3>Live Analytics</h3>
+          <p>Rolling metrics, VWAP calculations, volatility tracking, and volume distribution — updated every second.</p>
+        </div>
+
+        <div class="feature-card reveal" data-delay="200">
+          <div class="feature-icon purple">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          </div>
+          <h3>AI-Powered Insights</h3>
+          <p>Ask questions about live market data and get instant answers from the built-in AI assistant with streaming responses.</p>
+        </div>
+
+        <div class="feature-card reveal" data-delay="300">
+          <div class="feature-icon red">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4m0 4h.01"/></svg>
+          </div>
+          <h3>Smart Alerts</h3>
+          <p>Volume spike detection, price threshold alerts, and ML-powered anomaly detection via Isolation Forest.</p>
+        </div>
+
+        <div class="feature-card reveal" data-delay="400">
+          <div class="feature-icon cyan">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
+          </div>
+          <h3>Cross-Exchange Arbitrage</h3>
+          <p>Automatically detect price spreads across exchanges and surface profitable arbitrage opportunities.</p>
+        </div>
+
+        <div class="feature-card reveal" data-delay="500">
+          <div class="feature-icon orange">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2zM22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
+          </div>
+          <h3>News & Sentiment</h3>
+          <p>Live crypto news pipeline with VADER sentiment analysis. See market mood shift in real-time.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Live Preview Section -->
+  <section class="live-preview" id="live-preview">
+    <div class="section-container">
+      <div class="section-label reveal">Live Preview</div>
+      <h2 class="section-title reveal">See the Data <span class="gradient-text">Come Alive</span></h2>
+      <p class="section-desc reveal">Interactive Highcharts-powered visualization — the same engine powering institutional trading platforms.</p>
+
+      <div class="preview-chart-wrap reveal">
+        <div class="preview-chart-toolbar">
+          <div class="toolbar-left">
+            <button class="toolbar-btn active" data-series="area">Area</button>
+            <button class="toolbar-btn" data-series="candlestick">Candlestick</button>
+            <button class="toolbar-btn" data-series="line">Line</button>
+          </div>
+          <div class="toolbar-right">
+            <span class="toolbar-label">BTC-USD</span>
+            <span class="toolbar-live-dot"></span>
+            <span class="toolbar-live-text">Simulated</span>
+          </div>
+        </div>
+        <div id="previewChart" class="preview-chart"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Stats Section -->
+  <section class="stats" id="stats">
+    <div class="stats-inner">
+      <div class="stat-item reveal">
+        <span class="stat-number" data-count="1000000">0</span>
+        <span class="stat-suffix">+</span>
+        <span class="stat-label">Events Processed Daily</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item reveal">
+        <span class="stat-number" data-count="99.9">0</span>
+        <span class="stat-suffix">%</span>
+        <span class="stat-label">Uptime Reliability</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item reveal">
+        <span class="stat-number" data-count="15">0</span>
+        <span class="stat-suffix">+</span>
+        <span class="stat-label">Chart Visualizations</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item reveal">
+        <span class="stat-number" data-count="200">0</span>
+        <span class="stat-suffix">ms</span>
+        <span class="stat-label">End-to-End Latency</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pipeline Architecture Section -->
+  <section class="pipeline" id="pipeline">
+    <div class="section-container">
+      <div class="section-label reveal">Architecture</div>
+      <h2 class="section-title reveal">Built on <span class="gradient-text">Production-Grade</span> Technology</h2>
+      <p class="section-desc reveal">A modern streaming architecture designed for reliability, scalability, and real-time performance.</p>
+
+      <div class="pipeline-flow reveal">
+        <div class="pipeline-node">
+          <div class="pipeline-node-icon exchange">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/></svg>
+          </div>
+          <div class="pipeline-node-label">Exchanges</div>
+          <div class="pipeline-node-sub">Coinbase · Binance · Kraken</div>
+        </div>
+        <div class="pipeline-arrow"><span>→</span></div>
+        <div class="pipeline-node">
+          <div class="pipeline-node-icon kafka">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+          </div>
+          <div class="pipeline-node-label">Apache Kafka</div>
+          <div class="pipeline-node-sub">Message Broker</div>
+        </div>
+        <div class="pipeline-arrow"><span>→</span></div>
+        <div class="pipeline-node">
+          <div class="pipeline-node-icon spark">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          </div>
+          <div class="pipeline-node-label">PySpark</div>
+          <div class="pipeline-node-sub">Stream Processing</div>
+        </div>
+        <div class="pipeline-arrow"><span>→</span></div>
+        <div class="pipeline-node">
+          <div class="pipeline-node-icon storage">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          </div>
+          <div class="pipeline-node-label">S3 / Redshift</div>
+          <div class="pipeline-node-sub">Data Lake & Warehouse</div>
+        </div>
+        <div class="pipeline-arrow"><span>→</span></div>
+        <div class="pipeline-node">
+          <div class="pipeline-node-icon dashboard">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          </div>
+          <div class="pipeline-node-label">Dashboard</div>
+          <div class="pipeline-node-sub">Flask + Highcharts</div>
+        </div>
+      </div>
+
+      <div class="tech-badges reveal">
+        <span class="tech-badge">Python</span>
+        <span class="tech-badge">Apache Kafka</span>
+        <span class="tech-badge">PySpark</span>
+        <span class="tech-badge">Flask</span>
+        <span class="tech-badge">Highcharts</span>
+        <span class="tech-badge">AWS S3</span>
+        <span class="tech-badge">Redshift</span>
+        <span class="tech-badge">Prometheus</span>
+        <span class="tech-badge">Grafana</span>
+        <span class="tech-badge">Docker</span>
+        <span class="tech-badge">scikit-learn</span>
+        <span class="tech-badge">VADER NLP</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA Section -->
+  <section class="cta" id="cta">
+    <div class="cta-inner">
+      <div class="cta-glow"></div>
+      <h2 class="cta-title reveal">Ready to See the <span class="gradient-text">Markets in Motion</span>?</h2>
+      <p class="cta-desc reveal">Jump into the live dashboard and experience real-time crypto intelligence.</p>
+      <div class="cta-actions reveal">
+        <a href="/dashboard" class="btn btn-primary btn-lg">
+          <span class="btn-glow"></span>
+          Launch Dashboard
+          <span class="btn-arrow">→</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <span class="nav-logo">⚡</span>
+        <span>CryptoStream</span>
+      </div>
+      <div class="footer-links">
+        <a href="/dashboard">Dashboard</a>
+        <a href="/news">News</a>
+        <a href="/api/docs">API Docs</a>
+      </div>
+      <div class="footer-copy">Built with Kafka, Flask, and Highcharts</div>
+    </div>
+  </footer>
+
+  <script src="https://code.highcharts.com/stock/highstock.js" crossorigin="anonymous"></script>
+  <script src="https://code.highcharts.com/stock/modules/exporting.js" crossorigin="anonymous"></script>
+  <script src="/js/landing.js"></script>
+</body>
+</html>
