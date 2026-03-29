@@ -86,7 +86,7 @@ _news_state = {
 _news_lock = threading.Lock()
 
 NEWS_MAX_ARTICLES = 200
-NEWS_RETENTION_MINUTES = 30
+NEWS_RETENTION_MINUTES = 1440
 
 WINDOW_MINUTES = 3
 MAX_RETENTION_MINUTES = 10
@@ -232,7 +232,7 @@ def _poll_news():
                     config.topic_news,
                     bootstrap_servers=[config.kafka_server],
                     group_id="crypto-dashboard-news",
-                    auto_offset_reset="latest",
+                    auto_offset_reset="earliest",
                     enable_auto_commit=True,
                     value_deserializer=lambda v: json.loads(v.decode("utf-8")),
                     session_timeout_ms=30000,
@@ -521,6 +521,11 @@ def _alert_loop():
 @app.route("/")
 def index():
     return send_from_directory(app.static_folder, "index.html")
+
+
+@app.route("/news")
+def news_page():
+    return send_from_directory(app.static_folder, "news.html")
 
 
 @app.route("/favicon.ico")

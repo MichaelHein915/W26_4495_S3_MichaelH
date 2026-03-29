@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CryptoStream — News &amp; Sentiment</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="stylesheet" href="/css/news-page.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+  <script>
+    (function(){const t=localStorage.getItem('theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');})();
+  </script>
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-brand">
+        <div class="header-logo">⚡</div>
+        <h1>CryptoStream</h1>
+        <nav class="header-nav">
+          <a href="/" class="nav-link">Dashboard</a>
+          <a href="/news" class="nav-link active">News</a>
+        </nav>
+      </div>
+      <div class="header-controls">
+        <button class="icon-btn" id="themeToggle" title="Toggle theme" aria-label="Toggle light/dark theme">
+          <span id="themeIcon">☀</span>
+        </button>
+        <span class="updated-at" id="updatedAt">--:--:-- UTC</span>
+      </div>
+    </header>
+
+    <main class="main news-page-main">
+      <!-- Sentiment Overview Row -->
+      <section class="np-sentiment-row">
+        <div class="np-sentiment-card np-card">
+          <div class="np-card-header">
+            <span class="np-card-icon">📊</span>
+            <h3>Market Sentiment</h3>
+          </div>
+          <div class="np-gauge-wrap">
+            <div class="sentiment-gauge" id="sentimentGauge">
+              <div class="sentiment-gauge-fill" id="sentimentGaugeFill"></div>
+              <div class="sentiment-gauge-needle" id="sentimentGaugeNeedle"></div>
+            </div>
+            <div class="sentiment-gauge-labels">
+              <span class="sg-label bearish">Bearish</span>
+              <span class="sg-label neutral">Neutral</span>
+              <span class="sg-label bullish">Bullish</span>
+            </div>
+            <div class="sentiment-score" id="sentimentScore">--</div>
+          </div>
+        </div>
+
+        <div class="np-stats-card np-card">
+          <div class="np-card-header">
+            <span class="np-card-icon">📈</span>
+            <h3>Breakdown</h3>
+          </div>
+          <div class="np-stats-grid">
+            <div class="np-stat positive">
+              <span class="np-stat-count" id="statPos">0</span>
+              <span class="np-stat-label">Positive</span>
+            </div>
+            <div class="np-stat neutral">
+              <span class="np-stat-count" id="statNeu">0</span>
+              <span class="np-stat-label">Neutral</span>
+            </div>
+            <div class="np-stat negative">
+              <span class="np-stat-count" id="statNeg">0</span>
+              <span class="np-stat-label">Negative</span>
+            </div>
+            <div class="np-stat total">
+              <span class="np-stat-count" id="statTotal">0</span>
+              <span class="np-stat-label">Total</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="np-chart-card np-card">
+          <div class="np-card-header">
+            <span class="np-card-icon">🕐</span>
+            <h3>Sentiment Over Time</h3>
+          </div>
+          <canvas id="sentimentTimeChart"></canvas>
+        </div>
+      </section>
+
+      <!-- Symbol sentiment breakdown -->
+      <section class="np-symbol-section np-card">
+        <div class="np-card-header">
+          <span class="np-card-icon">🪙</span>
+          <h3>Sentiment by Symbol</h3>
+        </div>
+        <div class="np-symbol-chips" id="symbolChips"></div>
+      </section>
+
+      <!-- Filters & News Feed -->
+      <section class="np-feed-section">
+        <div class="np-feed-controls">
+          <input type="search" id="newsSearch" placeholder="Search headlines..." class="np-search-input" autocomplete="off">
+          <div class="np-filter-pills">
+            <button class="np-pill active" data-filter="all">All</button>
+            <button class="np-pill" data-filter="positive">Positive</button>
+            <button class="np-pill" data-filter="neutral">Neutral</button>
+            <button class="np-pill" data-filter="negative">Negative</button>
+          </div>
+          <select id="currencyFilter" class="np-select" title="Filter by currency">
+            <option value="">All Currencies</option>
+          </select>
+          <button class="np-refresh-btn" id="refreshBtn" title="Refresh now">↻ Refresh</button>
+        </div>
+        <div class="np-feed" id="newsFeed">
+          <div class="np-feed-loading">Loading news...</div>
+        </div>
+        <div class="np-feed-footer" id="feedFooter">
+          <span id="articleCount">0 articles</span>
+          <span id="lastUpdated">Last updated: --</span>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/js/news-page.js"></script>
+</body>
+</html>
