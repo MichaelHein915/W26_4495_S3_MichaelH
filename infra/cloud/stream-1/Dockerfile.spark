@@ -1,0 +1,25 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Java is required for PySpark
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    default-jdk-headless \
+    gcc \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV JAVA_HOME=/usr/lib/jvm/default-java
+
+# Install Python deps
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/ ./src/
+COPY pyproject.toml .
+COPY README.md .
+
+RUN pip install --no-cache-dir -e ".[streaming]" 2>/dev/null || pip install --no-cache-dir -e .
+
+# Uses the cloud-only entry point — does NOT touch the local cli/streaming.py
+CMD ["python", "-m", "crypto_analytics.cli.streaming_cloud"]

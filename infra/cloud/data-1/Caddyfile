@@ -1,0 +1,42 @@
+# Default mode is HTTP-only on port 80 so the stack works without a domain.
+# Later, set SITE_ADDRESS to your real domain or nip.io hostname to enable
+# Caddy's automatic HTTPS. Examples:
+#   SITE_ADDRESS=:80
+#   SITE_ADDRESS=203.0.113.10.nip.io
+
+{$SITE_ADDRESS:80} {
+
+    # ── Grafana (zoomcamp analytics panels) ───────────────────────────────────
+    handle /grafana* {
+        reverse_proxy grafana:3000
+    }
+
+    # ── FastAPI (all /api/* routes + SSE stream) ──────────────────────────────
+    handle /api* {
+        reverse_proxy api:8000 {
+            # Keep SSE connections alive through the proxy
+            flush_interval -1
+            header_up Host {host}
+        }
+    }
+
+    # ── React SPA (served by FastAPI as static files + SPA fallback) ──────────
+    handle {
+        reverse_proxy api:8000
+    }
+
+    # ── Security headers ──────────────────────────────────────────────────────
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    # ── Logging ───────────────────────────────────────────────────────────────
+    log {
+        output stdout
+        format console
+        level WARN
+    }
+}

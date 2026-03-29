@@ -1,0 +1,21 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# System deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python deps first (layer caching)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy source
+COPY src/ ./src/
+COPY pyproject.toml .
+COPY README.md .
+
+RUN pip install --no-cache-dir -e ".[producer]" 2>/dev/null || pip install --no-cache-dir -e .
+
+CMD ["python", "-m", "crypto_analytics.cli.producer"]

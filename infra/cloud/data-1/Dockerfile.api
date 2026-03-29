@@ -1,0 +1,25 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/ ./src/
+COPY pyproject.toml .
+COPY README.md .
+# Copy the pre-built React frontend
+COPY apps/dashboard/frontend/dist/ ./apps/dashboard/frontend/dist/
+
+RUN pip install --no-cache-dir -e ".[dashboard]" 2>/dev/null || pip install --no-cache-dir -e .
+
+EXPOSE 8000
+# Uses the cloud-only API factory served from the FastAPI package.
+CMD ["uvicorn", "crypto_analytics.dashboard.api_cloud:create_cloud_app", \
+     "--factory", "--host", "0.0.0.0", "--port", "8000", \
+     "--workers", "2", "--log-level", "warning"]

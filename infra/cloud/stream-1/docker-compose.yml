@@ -1,0 +1,99 @@
+services:
+
+  # ── Kafka (KRaft — no Zookeeper) ──────────────────────────────────────────
+  kafka:
+    image: apache/kafka:3.7.1
+    container_name: kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,INTERNAL://0.0.0.0:29092
+      # PLAINTEXT_HOST is for external access if needed; INTERNAL is for same-VM containers
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://10.0.1.10:9092,INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 24
+      KAFKA_LOG_SEGMENT_BYTES: 134217728      # 128 MB
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      # KRaft cluster ID — generate once with: docker run --rm apache/kafka:3.7.1 /opt/kafka/bin/kafka-storage.sh random-uuid
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID}
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    ports:
+      - "9092:9092"       # Accessible from data-1 via private network
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list > /dev/null 2>&1"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 30s
+
+  # ── Python producer (Coinbase WebSocket → Kafka) ───────────────────────────
+  producer:
+    build:
+      context: ../../../          # repo root
+      dockerfile: infra/cloud/stream-1/Dockerfile.producer
+    container_name: crypto-producer
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      APP_ENV: cloud
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_TOPIC_RAW: ${KAFKA_TOPIC_RAW:-crypto.trades.raw.v1}
+      COINBASE_WS_URL: ${COINBASE_WS_URL:-wss://ws-feed.exchange.coinbase.com}
+      CRYPTO_SYMBOLS: ${CRYPTO_SYMBOLS:-BTC-USD,ETH-USD,SOL-USD,XRP-USD,ADA-USD}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    env_file:
+      - ../.env.cloud
+
+  # ── PySpark Structured Streaming ───────────────────────────────────────────
+  spark:
+    build:
+      context: ../../../
+      dockerfile: infra/cloud/stream-1/Dockerfile.spark
+    container_name: crypto-spark
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      APP_ENV: cloud
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_TOPIC_RAW: ${KAFKA_TOPIC_RAW:-crypto.trades.raw.v1}
+      KAFKA_TOPIC_CANDLES: ${KAFKA_TOPIC_CANDLES:-crypto.candles.1m.v1}
+      KAFKA_TOPIC_ALERTS: ${KAFKA_TOPIC_ALERTS:-crypto.alerts.v1}
+      KAFKA_FAIL_ON_DATA_LOSS: "false"
+      # ClickHouse connection — Spark writes aggregated results here
+      CLICKHOUSE_HOST: ${CLICKHOUSE_HOST:-10.0.1.20}
+      CLICKHOUSE_PORT: ${CLICKHOUSE_PORT:-8123}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-crypto}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-crypto_writer}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      # Spark checkpoints land on the attached volume
+      CHECKPOINT_DIR: /data/checkpoints
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Increase Spark memory — it shares the 16 GB VM with Kafka
+      SPARK_DRIVER_MEMORY: 4g
+      SPARK_EXECUTOR_MEMORY: 4g
+    volumes:
+      - spark_data:/data
+    env_file:
+      - ../.env.cloud
+
+volumes:
+  kafka_data:
+  spark_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/spark-volume    # Hetzner attached volume mount point

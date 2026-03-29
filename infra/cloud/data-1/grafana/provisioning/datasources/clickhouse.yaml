@@ -1,0 +1,19 @@
+apiVersion: 1
+prune: true
+
+datasources:
+  - name: ClickHouse
+    type: grafana-clickhouse-datasource
+    uid: clickhouse-crypto
+    version: 2
+    isDefault: true
+    jsonData:
+      host: clickhouse
+      port: 8123
+      protocol: http
+      database: crypto
+      username: $CLICKHOUSE_USER
+      defaultDatabase: crypto
+    secureJsonData:
+      password: $CLICKHOUSE_PASSWORD
+    editable: false

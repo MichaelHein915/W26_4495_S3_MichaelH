@@ -1,0 +1,154 @@
+{
+  "title": "Crypto Analytics — Real-Time Market Monitoring",
+  "description": "DE Zoomcamp capstone: VWAP time-series + volume distribution by symbol. Powered by Kafka → PySpark → ClickHouse.",
+  "uid": "crypto-analytics-main",
+  "version": 2,
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "tags": ["crypto", "zoomcamp", "streaming"],
+  "panels": [
+
+    {
+      "id": 1,
+      "title": "VWAP Over Time — Price Distribution Across Time",
+      "description": "Volume-Weighted Average Price per symbol over the selected time window. Each line is one trading pair. Shows how prices distribute and evolve in real time. (Zoomcamp: time-series distribution panel)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 10 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse-crypto" },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT window_start AS time, product_id AS metric, vwap_usd AS value FROM crypto.candles_1m WHERE window_start >= $__fromTime AND window_start <= $__toTime ORDER BY window_start ASC",
+          "editorType": "sql",
+          "format": 0,
+          "queryType": "timeSeries"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max", "min"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+
+    {
+      "id": 2,
+      "title": "Total Trade Volume by Symbol — Distribution Across Symbols",
+      "description": "Total volume traded per symbol over the selected window. Shows which coins are most actively traded — the distribution of activity across categories/symbols. (Zoomcamp: categorical distribution panel)",
+      "type": "barchart",
+      "gridPos": { "x": 0, "y": 10, "w": 12, "h": 9 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse-crypto" },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT product_id, sum(volume_qty) AS total_volume FROM crypto.candles_1m WHERE window_start >= $__fromTime AND window_start <= $__toTime GROUP BY product_id ORDER BY total_volume DESC",
+          "editorType": "sql",
+          "format": 1,
+          "queryType": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "fillOpacity": 80 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "total_volume" }, "properties": [{ "id": "displayName", "value": "Volume" }] }
+        ]
+      },
+      "options": {
+        "xField": "product_id",
+        "orientation": "vertical",
+        "legend": { "displayMode": "hidden" },
+        "tooltip": { "mode": "single" }
+      }
+    },
+
+    {
+      "id": 3,
+      "title": "Volatility by Symbol (Rolling Std Dev)",
+      "description": "Price volatility (standard deviation within each 1-minute window) summed per symbol. Higher = more price swings.",
+      "type": "barchart",
+      "gridPos": { "x": 12, "y": 10, "w": 12, "h": 9 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse-crypto" },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT product_id, avg(volatility_usd) AS avg_volatility FROM crypto.live_metrics WHERE window_start >= $__fromTime AND window_start <= $__toTime GROUP BY product_id ORDER BY avg_volatility DESC",
+          "editorType": "sql",
+          "format": 1,
+          "queryType": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "currencyUSD", "custom": { "fillOpacity": 80 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "avg_volatility" }, "properties": [{ "id": "displayName", "value": "Avg Volatility (USD)" }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] }
+        ]
+      },
+      "options": {
+        "xField": "product_id",
+        "orientation": "vertical",
+        "legend": { "displayMode": "hidden" }
+      }
+    },
+
+    {
+      "id": 4,
+      "title": "Volume Spike Alerts",
+      "description": "Recent alerts where trading volume exceeded the rolling baseline by 2× or more.",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 19, "w": 24, "h": 7 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse-crypto" },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT window_start AS Time, product_id AS Symbol, severity AS Severity, round(spike_ratio, 2) AS `Spike Ratio`, round(volume_qty, 4) AS Volume, round(baseline_volume_qty, 4) AS Baseline FROM crypto.alerts WHERE window_start >= $__fromTime ORDER BY window_start DESC LIMIT 50",
+          "editorType": "sql",
+          "format": 1,
+          "queryType": "table"
+        }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Severity" },
+            "properties": [
+              { "id": "custom.displayMode", "value": "color-background" },
+              { "id": "mappings", "value": [
+                { "type": "value", "options": { "high":   { "color": "red",    "index": 0 } } },
+                { "type": "value", "options": { "medium": { "color": "orange", "index": 1 } } },
+                { "type": "value", "options": { "low":    { "color": "yellow", "index": 2 } } }
+              ]}
+            ]
+          }
+        ]
+      },
+      "options": { "sortBy": [{ "displayName": "Time", "desc": true }] }
+    }
+
+  ],
+
+  "templating": {
+    "list": [
+      {
+        "name": "symbol",
+        "type": "query",
+        "label": "Symbol",
+        "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse-crypto" },
+        "query": "SELECT DISTINCT product_id FROM crypto.live_metrics ORDER BY product_id",
+        "multi": true,
+        "includeAll": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  }
+}

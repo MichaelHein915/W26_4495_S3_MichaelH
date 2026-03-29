@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "enterprise-crypto-analytics"
+version = "0.1.0"
+description = "Cloud-first real-time crypto analytics pipeline for Data Engineering Zoomcamp."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "clickhouse-connect>=0.7.19",
+  "fastapi>=0.115.12",
+  "kafka-python-ng>=2.2.3",
+  "pandas>=2.2.3",
+  "pyarrow>=18.1.0",
+  "pyspark==3.5.5",
+  "python-dotenv>=1.0.1",
+  "uvicorn>=0.34.2",
+  "websocket-client>=1.8.0",
+]
+
+[dependency-groups]
+dev = [
+  "httpx>=0.28.1",
+  "ruff>=0.11.4",
+]
+
+[project.scripts]
+crypto-producer = "crypto_analytics.cli.producer:main"
+crypto-streaming-cloud = "crypto_analytics.cli.streaming_cloud:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/crypto_analytics"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

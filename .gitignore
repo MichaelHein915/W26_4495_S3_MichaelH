@@ -8,6 +8,8 @@ env/
 venv/
 ENV/
 .venv
+.pytest_cache/
+.ruff_cache/
 
 # IDEs
 .vscode/
@@ -19,6 +21,7 @@ ENV/
 # Data
 data/checkpoints/*
 data/output/*
+data/local/*
 *.csv
 *.parquet
 
@@ -29,9 +32,12 @@ logs/
 # Environment
 .env
 .env.local
+infra/cloud/.env.cloud
 
 # Docker
 docker-compose.override.yml
+apps/dashboard/frontend/node_modules/
+apps/dashboard/frontend/dist/
 
 # macOS
 .DS_Store
@@ -43,3 +49,14 @@ docker-compose.override.yml
 spark-warehouse/
 metastore_db/
 derby.log
+
+.bruin.yml
+logs/runs
+logs/*.log
+
+# Terraform
+infra/cloud/terraform/.terraform/
+infra/cloud/terraform/.terraform.lock.hcl
+infra/cloud/terraform/terraform.tfstate
+infra/cloud/terraform/terraform.tfstate.*
+infra/cloud/terraform/terraform.tfvars

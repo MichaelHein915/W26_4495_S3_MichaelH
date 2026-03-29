@@ -1,0 +1,67 @@
+#cloud-config
+# data-1: ClickHouse + FastAPI + Grafana + Caddy
+# This runs once on first boot. It installs Docker, sets up swap,
+# and creates mount points. You deploy your code separately via rsync.
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - htop
+  - unzip
+
+write_files:
+  - path: /etc/docker/daemon.json
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+
+runcmd:
+  # ── Install Docker CE ────────────────────────────────────────────────────────
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - >
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc]
+    https://download.docker.com/linux/ubuntu
+    $(. /etc/os-release && echo "$VERSION_CODENAME") stable"
+    > /etc/apt/sources.list.d/docker.list
+  - apt-get update -qq
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  - systemctl enable docker
+  - systemctl start docker
+
+  # ── Swap (2 GB) — safety net for ClickHouse under heavy query load ───────────
+  - fallocate -l 2G /swapfile
+  - chmod 600 /swapfile
+  - mkswap /swapfile
+  - swapon /swapfile
+  - echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
+  # ── Mount point for the Hetzner attached volume (ClickHouse data files) ──────
+  # Terraform automounts the volume; we just ensure the directory exists.
+  - mkdir -p /mnt/clickhouse-volume
+
+  # ── Deployment directory (rsync code here after provisioning) ───────────────
+  - mkdir -p /opt/crypto-analytics
+  - chmod 755 /opt/crypto-analytics
+
+final_message: |
+  data-1 bootstrap complete.
+  Next steps:
+    1. rsync -av --exclude='.git' ./ root@<DATA_IP>:/opt/crypto-analytics/
+    2. ssh root@<DATA_IP>
+    3. cd /opt/crypto-analytics
+    4. cp infra/cloud/.env.cloud.example infra/cloud/.env.cloud  # fill in secrets
+    5. Build the React frontend: cd apps/dashboard/frontend && npm install && npm run build
+    6. docker compose --env-file infra/cloud/.env.cloud -f infra/cloud/data-1/docker-compose.yml up -d --build
