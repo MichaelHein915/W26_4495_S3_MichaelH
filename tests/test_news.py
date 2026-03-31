@@ -201,6 +201,50 @@ class TestSentimentAnalytics:
             assert "avg_compound" in point
             assert "article_count" in point
 
+    def test_compute_news_spike_vs_price(self):
+        from analytics import compute_news_spike_vs_price
+        from datetime import datetime, timezone
+
+        events = [
+            {
+                "event_time": datetime(2026, 3, 26, 10, 1, 0, tzinfo=timezone.utc),
+                "product_id": "BTC-USD",
+                "price_usd": 100.0,
+                "size_qty": 1.0,
+            },
+            {
+                "event_time": datetime(2026, 3, 26, 10, 2, 0, tzinfo=timezone.utc),
+                "product_id": "BTC-USD",
+                "price_usd": 102.0,
+                "size_qty": 1.0,
+            },
+        ]
+        news = [{"currencies": ["BTC"], "published_at": "2026-03-26T10:00:30Z"}]
+        out = compute_news_spike_vs_price(events, news, "BTC-USD", bucket_minutes=5)
+        assert len(out) == 1
+        assert out[0]["article_count"] == 1
+        assert out[0]["trade_count"] == 2
+        assert out[0]["avg_price_usd"] == 101.0
+        assert "bucket_start" in out[0]
+
+    def test_compute_news_spike_vs_price_trades_only(self):
+        from analytics import compute_news_spike_vs_price
+        from datetime import datetime, timezone
+
+        events = [
+            {
+                "event_time": datetime(2026, 3, 26, 10, 1, 0, tzinfo=timezone.utc),
+                "product_id": "BTC-USD",
+                "price_usd": 50.0,
+                "size_qty": 1.0,
+            },
+        ]
+        out = compute_news_spike_vs_price(events, [], "BTC-USD", bucket_minutes=5)
+        assert len(out) == 1
+        assert out[0]["article_count"] == 0
+        assert out[0]["trade_count"] == 1
+        assert out[0]["avg_price_usd"] == 50.0
+
 
 # ── Dashboard API endpoint tests ──────────────────────────────────────
 

@@ -37,8 +37,9 @@
           <tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr>
           <tr><td><code>window</code></td><td>int</td><td>3</td><td>Time window in minutes (1–30)</td></tr>
           <tr><td><code>exchange</code></td><td>string</td><td>—</td><td>Filter by exchange: <code>coinbase</code>, <code>binance</code>, <code>kraken</code></td></tr>
+          <tr><td><code>spike_symbol</code></td><td>string</td><td>—</td><td>Product for <code>news_spike_vs_price</code> (e.g. <code>BTC-USD</code> or <code>BTC</code>). Defaults to the busiest symbol in the window.</td></tr>
         </table>
-        <p style="margin-top: 0.75rem;"><strong>Example:</strong> <code>GET /api/dashboard?window=5&exchange=binance</code></p>
+        <p style="margin-top: 0.75rem;"><strong>Example:</strong> <code>GET /api/dashboard?window=5&exchange=binance&amp;spike_symbol=ETH-USD</code></p>
       </div>
     </div>
 

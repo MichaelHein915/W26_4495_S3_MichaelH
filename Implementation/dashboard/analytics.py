@@ -407,6 +407,93 @@ def compute_sentiment_timeseries(news_events: list) -> list[dict]:
     return ts.to_dict(orient="records")
 
 
+def compute_news_spike_vs_price(
+    events: list,
+    news_events: list,
+    product_id: str,
+    bucket_minutes: int = 5,
+) -> list[dict]:
+    """
+    Time-bucketed news volume vs. average trade price for one product_id.
+
+    News rows are matched when the article's currencies include the same base
+    asset as product_id (e.g. BTC for BTC-USD). Designed for a dual-axis chart:
+    article counts and price in the same time buckets.
+    """
+    if not product_id:
+        return []
+    base = normalize_symbol_base(product_id)
+    rule = f"{bucket_minutes}min"
+
+    trades = [e for e in events if e.get("product_id") == product_id]
+    news_times: list[datetime] = []
+    for ev in news_events:
+        curs = [str(c).upper() for c in (ev.get("currencies") or [])]
+        if base not in curs:
+            continue
+        raw = ev.get("published_at") or ev.get("fetched_at") or ""
+        dt = parse_event_time(raw) if raw else None
+        if dt is None:
+            continue
+        news_times.append(dt)
+
+    if not trades and not news_times:
+        return []
+
+    t_r = pd.DataFrame()
+    if trades:
+        tdf = pd.DataFrame(trades)
+        tdf["event_time"] = pd.to_datetime(tdf["event_time"], utc=True)
+        t_r = (
+            tdf.set_index("event_time")
+            .resample(rule, label="left", closed="left")
+            .agg(
+                trade_count=("price_usd", "count"),
+                avg_price_usd=("price_usd", "mean"),
+            )
+        )
+
+    n_r = pd.DataFrame()
+    if news_times:
+        ndf = pd.DataFrame({"ts": pd.DatetimeIndex(news_times, tz="UTC")})
+        n_r = ndf.set_index("ts").resample(rule, label="left", closed="left").size().to_frame(name="article_count")
+
+    indices = []
+    if not t_r.empty:
+        indices.append(t_r.index)
+    if not n_r.empty:
+        indices.append(n_r.index)
+    full_idx = indices[0]
+    for ix in indices[1:]:
+        full_idx = full_idx.union(ix)
+    full_idx = full_idx.sort_values()
+
+    if n_r.empty:
+        ac = pd.Series(0, index=full_idx, dtype=int)
+    else:
+        ac = n_r.reindex(full_idx)["article_count"].fillna(0).astype(int)
+    if t_r.empty:
+        tc = pd.Series(0, index=full_idx, dtype="int64")
+        ap = pd.Series(float("nan"), index=full_idx)
+    else:
+        tc = t_r.reindex(full_idx)["trade_count"].fillna(0)
+        ap = t_r.reindex(full_idx)["avg_price_usd"]
+
+    out: list[dict] = []
+    for i in full_idx:
+        avg_p = ap.loc[i]
+        tc_i = tc.loc[i]
+        out.append(
+            {
+                "bucket_start": i.strftime("%Y-%m-%dT%H:%M:%S"),
+                "article_count": int(ac.loc[i]),
+                "trade_count": int(tc_i) if pd.notna(tc_i) else 0,
+                "avg_price_usd": round(float(avg_p), 2) if pd.notna(avg_p) else None,
+            }
+        )
+    return out
+
+
 def compute_volume_spikes(
     metrics: list[dict], volume_history: dict, threshold: float = 2.0
 ) -> tuple[list[dict], dict]:

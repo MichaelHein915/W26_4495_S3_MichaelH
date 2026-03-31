@@ -11,6 +11,7 @@ let heatmapChart = null;
 let radarChart = null;
 let bubbleChart = null;
 let stackedVolumeChart = null;
+let newsSpikeChart = null;
 let refreshTimer = null;
 let metricsCache = [];
 let tableSortKey = 'product_id';
@@ -73,6 +74,7 @@ const sentimentNegCountEl = el('sentimentNegCount');
 const newsSentimentSectionEl = el('newsSentimentSection');
 let sentimentBySymbolCache = {};
 const watchlistGridEl = el('watchlistGrid');
+let newsSpikeSymbolParam = localStorage.getItem('newsSpikeSymbol') || '';
 
 function setStatusClass(elem, status) {
   elem.classList.remove('ok', 'warn', 'error');
@@ -362,6 +364,9 @@ async function fetchDashboard() {
   try {
     let url = `${API_BASE}/api/dashboard?window=${windowMinutes}`;
     if (exchangeFilter) url += `&exchange=${encodeURIComponent(exchangeFilter)}`;
+    if (newsSpikeSymbolParam) {
+      url += `&spike_symbol=${encodeURIComponent(newsSpikeSymbolParam)}`;
+    }
     const res = await fetch(url);
     if (!res.ok) throw new Error(res.statusText);
     return await res.json();
@@ -682,6 +687,158 @@ function renderNewsFeed(news) {
   }).join('');
 }
 
+function formatSpikeBucketLabel(isoStr) {
+  if (!isoStr) return '';
+  try {
+    const d = new Date(isoStr);
+    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return isoStr;
+  }
+}
+
+function renderNewsSpikeVsPrice(data) {
+  const panel = el('newsSpikePanel');
+  const select = el('newsSpikeSymbol');
+  const canvas = el('newsSpikeChart');
+  if (!panel || !select || !canvas) return;
+
+  const metrics = data?.metrics || [];
+  const spike = data?.news_spike_vs_price;
+  const series = spike?.series || [];
+  const serverSymbol = spike?.symbol || '';
+
+  const showPanel = metrics.length > 0 || series.length > 0;
+  if (!showPanel) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = 'block';
+
+  const ids = [...new Set(metrics.map((m) => m.product_id))].sort();
+  const opts = ids.map((id) => `<option value="${id}">${id}</option>`).join('');
+  select.innerHTML = opts;
+  if (serverSymbol && !ids.includes(serverSymbol)) {
+    select.insertAdjacentHTML(
+      'beforeend',
+      `<option value="${serverSymbol}">${serverSymbol}</option>`,
+    );
+  }
+
+  const optVals = [...select.options].map((o) => o.value);
+  if (newsSpikeSymbolParam && optVals.includes(newsSpikeSymbolParam)) {
+    select.value = newsSpikeSymbolParam;
+  } else if (serverSymbol && optVals.includes(serverSymbol)) {
+    select.value = serverSymbol;
+  } else if (select.options.length) {
+    select.value = select.options[0].value;
+  }
+  newsSpikeSymbolParam = select.value || newsSpikeSymbolParam;
+  localStorage.setItem('newsSpikeSymbol', newsSpikeSymbolParam);
+
+  if (!select.dataset.spikeHooked) {
+    select.dataset.spikeHooked = '1';
+    select.addEventListener('change', () => {
+      newsSpikeSymbolParam = select.value;
+      localStorage.setItem('newsSpikeSymbol', newsSpikeSymbolParam);
+      refresh();
+    });
+  }
+
+  const labels = series.map((s) => formatSpikeBucketLabel(s.bucket_start));
+  const articles = series.map((s) => s.article_count);
+  const prices = series.map((s) => s.avg_price_usd);
+  const tc = getThemeColors();
+  const barCol = CHART_COLORS[2];
+  const lineCol = CHART_COLORS[0];
+  const ctx = canvas.getContext('2d');
+
+  if (!newsSpikeChart) {
+    newsSpikeChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            type: 'bar',
+            label: 'News articles',
+            data: articles,
+            backgroundColor: `${barCol}99`,
+            borderColor: barCol,
+            borderWidth: 1,
+            yAxisID: 'y',
+          },
+          {
+            type: 'line',
+            label: 'Avg price (USD)',
+            data: prices,
+            borderColor: lineCol,
+            backgroundColor: `${lineCol}22`,
+            borderWidth: 2,
+            pointRadius: 2,
+            tension: 0.2,
+            spanGaps: true,
+            yAxisID: 'y1',
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            labels: { color: tc.text, usePointStyle: true, padding: 14 },
+          },
+          tooltip: {
+            backgroundColor: tc.tooltipBg,
+            titleColor: tc.tooltipTitle,
+            bodyColor: tc.tooltipBody,
+            borderColor: tc.tooltipBorder,
+            borderWidth: 1,
+            cornerRadius: 8,
+            padding: 10,
+          },
+        },
+        scales: {
+          x: { ticks: { color: tc.text, maxRotation: 45 }, grid: { color: tc.grid } },
+          y: {
+            position: 'left',
+            beginAtZero: true,
+            title: { display: true, text: 'Articles', color: tc.text },
+            ticks: { color: tc.text, stepSize: 1 },
+            grid: { color: tc.gridStrong },
+          },
+          y1: {
+            position: 'right',
+            title: { display: true, text: 'Price (USD)', color: tc.text },
+            ticks: {
+              color: tc.text,
+              callback: (v) => (v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : `$${Number(v).toFixed(2)}`),
+            },
+            grid: { drawOnChartArea: false },
+          },
+        },
+      },
+    });
+  } else {
+    newsSpikeChart.data.labels = labels;
+    newsSpikeChart.data.datasets[0].data = articles;
+    newsSpikeChart.data.datasets[1].data = prices;
+    newsSpikeChart.data.datasets[0].backgroundColor = `${barCol}99`;
+    newsSpikeChart.data.datasets[0].borderColor = barCol;
+    newsSpikeChart.data.datasets[1].borderColor = lineCol;
+    newsSpikeChart.data.datasets[1].backgroundColor = `${lineCol}22`;
+    newsSpikeChart.options.plugins.legend.labels.color = tc.text;
+    newsSpikeChart.options.scales.x.ticks.color = tc.text;
+    newsSpikeChart.options.scales.y.ticks.color = tc.text;
+    newsSpikeChart.options.scales.y.title.color = tc.text;
+    newsSpikeChart.options.scales.y1.ticks.color = tc.text;
+    newsSpikeChart.options.scales.y1.title.color = tc.text;
+    newsSpikeChart.update();
+  }
+}
+
 function renderNewsSentiment(data) {
   const summary = data?.sentiment_summary;
   const news = data?.news;
@@ -691,8 +848,17 @@ function renderNewsSentiment(data) {
   bySymbol.forEach(s => { sentimentBySymbolCache[s.currency] = s; });
 
   const hasNews = news && news.length > 0;
+  const hasMetrics = data?.metrics && data.metrics.length > 0;
   if (newsSentimentSectionEl) {
-    newsSentimentSectionEl.style.display = hasNews ? 'block' : 'none';
+    newsSentimentSectionEl.style.display = hasNews || hasMetrics ? 'block' : 'none';
+  }
+
+  const sentimentOverviewEl = el('sentimentOverview');
+  if (sentimentOverviewEl) {
+    sentimentOverviewEl.style.display = hasNews ? 'flex' : 'none';
+  }
+  if (newsFeedEl) {
+    newsFeedEl.style.display = hasNews ? 'block' : 'none';
   }
 
   if (hasNews) {
@@ -1663,6 +1829,7 @@ async function refresh() {
   renderAnomalyAlerts(data.anomalies);
   renderArbitrage(data.arbitrage);
   renderNewsSentiment(data);
+  renderNewsSpikeVsPrice(data);
   renderTicker(data.recent_trades);
   updateBarChart(data.metrics);
   updateDonutChart(data.metrics);

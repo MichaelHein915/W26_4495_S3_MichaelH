@@ -2033,6 +2033,65 @@ body:not(.loading) .skeleton-row { display: none; }
 
 .news-sentiment-section { margin-bottom: 1.5rem; }
 
+.news-spike-panel {
+  margin-bottom: 1.5rem;
+  padding: 1rem 1.1rem;
+  background: var(--surface-elevated, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.news-spike-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.news-spike-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+}
+
+.news-spike-desc {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  max-width: 42rem;
+  line-height: 1.4;
+}
+
+.news-spike-symbol-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.news-spike-select {
+  min-width: 9rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary, #1a1d24);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.news-spike-chart-container {
+  min-height: 220px;
+  margin: 0;
+  padding: 0.5rem 0 0;
+  border: none;
+  background: transparent;
+}
+
 .sentiment-overview {
   display: flex;
   gap: 2rem;

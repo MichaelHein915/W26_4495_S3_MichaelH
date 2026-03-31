@@ -140,6 +140,9 @@ class TestDashboardEndpoint:
         assert "timeseries" in data
         assert "alerts" in data
         assert "status" in data
+        assert "news_spike_vs_price" in data
+        assert data["news_spike_vs_price"]["symbol"]
+        assert "series" in data["news_spike_vs_price"]
 
     def test_dashboard_empty_state(self, api, client):
         with api._state_lock:

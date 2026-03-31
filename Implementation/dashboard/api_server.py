@@ -53,6 +53,7 @@ from analytics import (  # noqa: E402
     compute_sentiment_summary as _compute_sentiment_summary,
     compute_sentiment_by_symbol as _compute_sentiment_by_symbol,
     compute_sentiment_timeseries as _compute_sentiment_timeseries,
+    compute_news_spike_vs_price as _compute_news_spike_vs_price,
 )
 from ai_routes import ai_bp, start_insight_loop  # noqa: E402
 
@@ -304,7 +305,27 @@ def _get_news_events():
 
 # ── Dashboard payload builder ────────────────────────────────────────
 
-def _build_dashboard_payload(window_minutes: int, exchange_filter: str) -> dict:
+def _resolve_spike_symbol(requested: str, metrics: list) -> str:
+    """Pick product_id for news-vs-price chart: explicit param, else busiest symbol, else BTC-USD."""
+    requested_raw = (requested or "").strip().upper()
+    ids = [m["product_id"] for m in metrics]
+    if requested_raw:
+        if requested_raw in ids:
+            return requested_raw
+        if "-" not in requested_raw:
+            candidate = f"{requested_raw}-USD"
+            if candidate in ids:
+                return candidate
+            return candidate
+        return requested_raw
+    if ids:
+        return max(metrics, key=lambda m: m["trade_count"])["product_id"]
+    return "BTC-USD"
+
+
+def _build_dashboard_payload(
+    window_minutes: int, exchange_filter: str, spike_symbol: str = ""
+) -> dict:
     """Build full dashboard payload. Computation only — no alert notifications."""
     events, meta = _get_events()
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
@@ -392,9 +413,21 @@ def _build_dashboard_payload(window_minutes: int, exchange_filter: str) -> dict:
     live_symbols = len(metrics)
 
     news_events = _get_news_events()
+    cutoff_news = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
+    news_in_window = []
+    for n in news_events:
+        t = _parse_event_time(n.get("published_at")) or _parse_event_time(n.get("fetched_at"))
+        if t is not None and t >= cutoff_news:
+            news_in_window.append(n)
+
     sentiment_summary = _compute_sentiment_summary(news_events)
     sentiment_by_symbol = _compute_sentiment_by_symbol(news_events)
     sentiment_timeseries = _compute_sentiment_timeseries(news_events)
+
+    spike_sym = _resolve_spike_symbol(spike_symbol, metrics)
+    news_spike_series = _compute_news_spike_vs_price(
+        events, news_in_window, spike_sym, bucket_minutes=5
+    )
 
     recent_news = sorted(
         news_events,
@@ -420,6 +453,11 @@ def _build_dashboard_payload(window_minutes: int, exchange_filter: str) -> dict:
         "sentiment_summary": sentiment_summary,
         "sentiment_by_symbol": sentiment_by_symbol,
         "sentiment_timeseries": sentiment_timeseries,
+        "news_spike_vs_price": {
+            "symbol": spike_sym,
+            "bucket_minutes": 5,
+            "series": news_spike_series,
+        },
         "status": {
             "kafka_status": kafka_status,
             "kafka_error": kafka_error,
@@ -632,7 +670,10 @@ def dashboard():
     window_minutes = int(request.args.get("window", WINDOW_MINUTES))
     window_minutes = max(1, min(window_minutes, 30))
     exchange_filter = request.args.get("exchange", "").strip().lower()
-    return jsonify(_build_dashboard_payload(window_minutes, exchange_filter))
+    spike_symbol = request.args.get("spike_symbol", "").strip()
+    return jsonify(
+        _build_dashboard_payload(window_minutes, exchange_filter, spike_symbol=spike_symbol)
+    )
 
 
 # ── Entrypoint ───────────────────────────────────────────────────────

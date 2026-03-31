@@ -349,6 +349,21 @@
           <div class="section-icon" style="background: var(--accent-purple-dim);">📰</div>
           <h2>News &amp; Sentiment</h2>
         </div>
+        <div class="news-spike-panel" id="newsSpikePanel" style="display: none;">
+          <div class="news-spike-head">
+            <div>
+              <h3 class="news-spike-title">News volume vs. price</h3>
+              <p class="news-spike-desc">Articles mentioning the asset (5m buckets) vs. average trade price in the same window</p>
+            </div>
+            <label class="news-spike-symbol-label">
+              <span>Symbol</span>
+              <select id="newsSpikeSymbol" class="news-spike-select" title="Pair for price series"></select>
+            </label>
+          </div>
+          <div class="chart-container news-spike-chart-container">
+            <canvas id="newsSpikeChart" aria-label="News count and price by time bucket"></canvas>
+          </div>
+        </div>
         <div class="sentiment-overview" id="sentimentOverview">
           <div class="sentiment-gauge-wrap">
             <div class="sentiment-gauge-label">Market Sentiment</div>
