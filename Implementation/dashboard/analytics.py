@@ -48,6 +48,7 @@ def compute_metrics(events: list) -> list[dict]:
     )
     for col in ["avg_price_usd", "vwap_usd", "volatility_usd", "total_volume_qty"]:
         metrics[col] = metrics[col].round(4 if col == "total_volume_qty" else 2)
+    metrics["total_notional_usd"] = metrics["total_notional_usd"].round(2)
     return metrics[
         [
             "product_id",
@@ -56,6 +57,7 @@ def compute_metrics(events: list) -> list[dict]:
             "vwap_usd",
             "volatility_usd",
             "total_volume_qty",
+            "total_notional_usd",
             "price_change_pct",
         ]
     ].to_dict(orient="records")

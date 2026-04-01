@@ -74,6 +74,8 @@ class TestComputeMetrics:
         row = result[0]
         expected_vwap = (100.0 * 2.0 + 200.0 * 1.0) / (2.0 + 1.0)
         assert row["vwap_usd"] == pytest.approx(expected_vwap, abs=0.01)
+        assert row["total_notional_usd"] == pytest.approx(400.0, abs=0.01)
+        assert row["total_volume_qty"] == pytest.approx(3.0, abs=0.01)
 
     def test_zero_volume_vwap_falls_back_to_avg(self, api):
         events = [make_parsed_event(price_usd=100.0, size_qty=0.0)]

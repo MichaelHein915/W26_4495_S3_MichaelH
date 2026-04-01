@@ -82,7 +82,21 @@ function setStatusClass(elem, status) {
 }
 
 function fmt(num) { return new Intl.NumberFormat().format(num); }
-function fmtVol(val) { return parseFloat(val).toFixed(4); }
+
+/** Compact formatting for base-asset quantities (K / M / B). */
+function fmtQuantity(val) {
+  const v = Number(val);
+  if (!Number.isFinite(v)) return '—';
+  const av = Math.abs(v);
+  const sign = v < 0 ? '-' : '';
+  if (av >= 1e9) return `${sign}${(av / 1e9).toFixed(2)}B`;
+  if (av >= 1e6) return `${sign}${(av / 1e6).toFixed(2)}M`;
+  if (av >= 1e3) return `${sign}${(av / 1e3).toFixed(2)}K`;
+  if (av >= 100) return `${sign}${av.toFixed(1)}`;
+  if (av >= 1) return `${sign}${av.toFixed(2)}`;
+  return `${sign}${av.toFixed(4)}`;
+}
+
 function fmtUsd(val) {
   if (val >= 1000) return `$${(val / 1000).toFixed(1)}k`;
   if (val >= 1) return `$${val.toFixed(2)}`;
@@ -110,7 +124,7 @@ function renderWatchlist(metrics) {
     watchlistGridEl.innerHTML = `
       <div class="watchlist-empty">
         <div class="watchlist-empty-icon">⭐</div>
-        <div>Star symbols in the table to add them here</div>
+        <div>Click ★ on a row in <a href="#rollingSummarySection">Rolling Summary</a> above to add symbols here.</div>
       </div>`;
     return;
   }
@@ -137,7 +151,7 @@ function renderWatchlist(metrics) {
       <div class="watchlist-price">${fmtUsd(m.avg_price_usd)}</div>
       <div class="watchlist-meta">
         <span>${fmt(m.trade_count)} trades</span>
-        <span>Vol: ${fmtVol(m.total_volume_qty)}</span>
+        <span>Vol: ${fmtQuantity(m.total_volume_qty)}</span>
       </div>
     </div>`;
   }).join('');
@@ -178,7 +192,7 @@ function renderMarketInsights(metrics) {
   const highVol = [...metrics].sort((a, b) => b.total_volume_qty - a.total_volume_qty)[0];
   const volEl = el('insightHighVol');
   if (volEl && highVol) {
-    volEl.textContent = `${highVol.product_id} (${fmtVol(highVol.total_volume_qty)})`;
+    volEl.textContent = `${highVol.product_id} (${fmtQuantity(highVol.total_volume_qty)})`;
   }
 
   const mostVolatile = [...metrics].sort((a, b) => b.volatility_usd - a.volatility_usd)[0];
@@ -187,12 +201,28 @@ function renderMarketInsights(metrics) {
     volatileEl.textContent = `${mostVolatile.product_id} ($${mostVolatile.volatility_usd.toFixed(2)})`;
   }
 
-  const totalVolume = metrics.reduce((s, m) => s + m.total_volume_qty, 0);
-  const btcVol = metrics.find((m) => m.product_id === 'BTC-USD')?.total_volume_qty || 0;
+  const notionalUsd = (m) => {
+    if (m.total_notional_usd != null && Number.isFinite(Number(m.total_notional_usd))) {
+      return Number(m.total_notional_usd);
+    }
+    const q = Number(m.total_volume_qty) || 0;
+    const p = Number(m.avg_price_usd) || 0;
+    return q * p;
+  };
+  const totalN = metrics.reduce((s, m) => s + notionalUsd(m), 0);
+  const btcRow = metrics.find((m) => m.product_id === 'BTC-USD');
+  const btcN = btcRow ? notionalUsd(btcRow) : 0;
   const domEl = el('insightBtcDom');
   if (domEl) {
-    const dom = totalVolume > 0 ? ((btcVol / totalVolume) * 100).toFixed(1) : '0.0';
-    domEl.textContent = `${dom}% by volume`;
+    let label;
+    if (totalN <= 0) {
+      label = '0.0% of notional USD';
+    } else {
+      const pct = (btcN / totalN) * 100;
+      const shown = pct > 0 && pct < 0.05 ? '<0.1' : pct.toFixed(1);
+      label = `${shown}% of notional USD`;
+    }
+    domEl.textContent = label;
   }
 }
 
@@ -285,7 +315,7 @@ function notifyAlerts(alerts) {
   playAlertSound();
 
   newAlerts.forEach((a) => {
-    const msg = `Volume spike: ${a.product_id} ${a.spike_ratio}x (${fmtVol(a.current_volume)})`;
+    const msg = `Volume spike: ${a.product_id} ${a.spike_ratio}x (${fmtQuantity(a.current_volume)})`;
     showToast(msg);
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification('Crypto Alert', { body: msg, icon: '⚡' });
@@ -461,7 +491,7 @@ function renderKPIs(data) {
 
   animateValue(totalTradesEl, trades, 400, (v) => fmt(Math.round(v)));
   animateValue(liveSymbolsEl, symbols, 400, (v) => fmt(Math.round(v)));
-  animateValue(totalVolumeEl, volume, 400, (v) => fmtVol(v));
+  animateValue(totalVolumeEl, volume, 400, (v) => fmtQuantity(v));
   animateValue(liveExchangesEl, numExchanges, 400, (v) => fmt(Math.round(v)));
   dataFreshnessEl.textContent = freshness != null ? `${freshness.toFixed(1)}s` : 'N/A';
   updatedAtEl.textContent = s.updated_at ?? '--:--:-- UTC';
@@ -562,7 +592,7 @@ function renderMetricsTable(metrics) {
       <td>${fmtUsd(m.avg_price_usd)}</td>
       <td>${fmtUsd(m.vwap_usd)}</td>
       <td>${fmtUsd(m.volatility_usd)}</td>
-      <td>${fmtVol(m.total_volume_qty)}</td>
+      <td>${fmtQuantity(m.total_volume_qty)}</td>
       <td>${getSentimentBadge(m.product_id)}</td>
     </tr>`;
   }).join('');
@@ -596,8 +626,8 @@ function renderAlerts(alerts) {
   if (!alerts?.length) { alertsSectionEl.style.display = 'none'; return; }
   alertsSectionEl.style.display = 'block';
   alertsEl.innerHTML = alerts.map((a) =>
-    `<div class="alert"><span class="alert-icon">⚡</span> <strong>${a.product_id}</strong>: volume ${a.current_volume.toFixed(4)} ` +
-    `(baseline ${a.baseline_volume.toFixed(4)}, <strong>${a.spike_ratio}x</strong>)</div>`
+    `<div class="alert"><span class="alert-icon">⚡</span> <strong>${a.product_id}</strong>: volume ${fmtQuantity(a.current_volume)} ` +
+    `(baseline ${fmtQuantity(a.baseline_volume)}, <strong>${a.spike_ratio}x</strong>)</div>`
   ).join('');
   notifyAlerts(alerts);
 }
@@ -969,7 +999,7 @@ function renderTicker(recentTrades) {
   }
   tickerTrackEl.innerHTML = recentTrades.map((t) =>
     `<span class="ticker-item"><span class="ticker-symbol">${t.product_id}</span> ` +
-    `$${t.price_usd.toLocaleString()} <span class="ticker-size">×${fmtVol(t.size_qty)}</span> ` +
+    `$${t.price_usd.toLocaleString()} <span class="ticker-size">×${fmtQuantity(t.size_qty)}</span> ` +
     `<span class="ticker-exchange">${t.exchange}</span> <span class="ticker-time">${t.event_time}</span></span>`
   ).join('');
 }
@@ -1291,7 +1321,7 @@ function updateBubbleChart(metrics) {
               label: (c) => {
                 const d = c.raw;
                 const m = metrics.find((x) => x.product_id === d.product_id);
-                return d.product_id ? [`${d.product_id}`, `Price: $${d.x.toLocaleString()}`, `Vol: ${fmtVol(d.y)}`, `Volatility: $${m?.volatility_usd?.toFixed(2) ?? '-'}`] : [];
+                return d.product_id ? [`${d.product_id}`, `Price: $${d.x.toLocaleString()}`, `Vol: ${fmtQuantity(d.y)}`, `Volatility: $${m?.volatility_usd?.toFixed(2) ?? '-'}`] : [];
               },
             },
             backgroundColor: tc.tooltipBg, titleColor: tc.tooltipTitle, bodyColor: tc.tooltipBody, borderColor: tc.tooltipBorder, borderWidth: 1, cornerRadius: 8,
@@ -1386,7 +1416,7 @@ function updateDonutChart(metrics) {
         plugins: {
           legend: { position: 'right', labels: { color: tc.text, boxWidth: 14, padding: 12, font: { size: 11 }, usePointStyle: true, pointStyle: 'circle' } },
           tooltip: {
-            callbacks: { label: (c) => { const t = c.dataset.data.reduce((a, b) => a + b, 0); return ` ${c.label}: ${fmtVol(c.parsed)} (${t > 0 ? ((c.parsed / t) * 100).toFixed(1) : 0}%)`; } },
+            callbacks: { label: (c) => { const t = c.dataset.data.reduce((a, b) => a + b, 0); return ` ${c.label}: ${fmtQuantity(c.parsed)} (${t > 0 ? ((c.parsed / t) * 100).toFixed(1) : 0}%)`; } },
             backgroundColor: tc.tooltipBg, titleColor: tc.tooltipTitle, bodyColor: tc.tooltipBody, borderColor: tc.tooltipBorder, borderWidth: 1, cornerRadius: 8,
           },
         },
@@ -1582,7 +1612,7 @@ async function drawCandlestickChart(symbol, color) {
             label: (c) => {
               const cd = candles[c.dataIndex];
               if (!cd) return '';
-              return [`O: $${cd.open}  H: $${cd.high}`, `L: $${cd.low}  C: $${cd.close}`, `Vol: ${fmtVol(cd.volume)}`];
+              return [`O: $${cd.open}  H: $${cd.high}`, `L: $${cd.low}  C: $${cd.close}`, `Vol: ${fmtQuantity(cd.volume)}`];
             },
           },
           backgroundColor: tc.tooltipBg, titleColor: tc.tooltipTitle, bodyColor: tc.tooltipBody, borderColor: tc.tooltipBorder, borderWidth: 1, cornerRadius: 8,
@@ -1638,7 +1668,7 @@ async function openModal(symbol) {
       ['VWAP', `$${m.vwap_usd.toFixed(2)}`],
       ['Change', `<span class="${cls}">${arrow} ${Math.abs(m.price_change_pct).toFixed(2)}%</span>`],
       ['Trades', fmt(m.trade_count)],
-      ['Volume', fmtVol(m.total_volume_qty)],
+      ['Volume', fmtQuantity(m.total_volume_qty)],
       ['Volatility', `$${m.volatility_usd.toFixed(2)}`],
     ].map(([l, v]) => `<div class="modal-stat"><div class="modal-stat-label">${l}</div><div class="modal-stat-value">${v}</div></div>`).join('');
   }

@@ -239,20 +239,6 @@
         </div>
       </section>
 
-      <!-- Watchlist (NEW) -->
-      <section class="watchlist-section" id="watchlistSection">
-        <div class="section-header">
-          <div class="section-icon" style="background: var(--accent-yellow-dim);">⭐</div>
-          <h2>Watchlist</h2>
-        </div>
-        <div class="watchlist-grid" id="watchlistGrid">
-          <div class="watchlist-empty">
-            <div class="watchlist-empty-icon">⭐</div>
-            <div>Star symbols in the table below to add them to your watchlist</div>
-          </div>
-        </div>
-      </section>
-
       <!-- Top Movers -->
       <section class="top-movers" id="topMoversSection" style="display:none">
         <div class="mover mover-up" id="topGainer">
@@ -266,11 +252,12 @@
       </section>
 
       <!-- Metrics Table -->
-      <section class="section">
+      <section class="section" id="rollingSummarySection">
         <div class="section-header">
           <div class="section-icon">📋</div>
           <h2>Rolling <span id="tableSummaryWindow">1</span>-Minute Summary</h2>
         </div>
+        <p class="section-hint">Click ★ next to a symbol to pin it to your <a href="#watchlistSection">watchlist</a> below.</p>
         <div class="table-controls">
           <input type="search" id="symbolSearch" placeholder="Search symbols…" class="search-input">
           <div class="direction-filters">
@@ -303,6 +290,21 @@
               <tr class="skeleton-row"><td colspan="9"><div class="skeleton-line"></div></td></tr>
             </tbody>
           </table>
+        </div>
+      </section>
+
+      <!-- Watchlist (below table so ★ column is discovered first) -->
+      <section class="watchlist-section" id="watchlistSection">
+        <div class="section-header">
+          <div class="section-icon" style="background: var(--accent-yellow-dim);">⭐</div>
+          <h2>Watchlist</h2>
+        </div>
+        <p class="section-hint section-hint--tight">Pinned symbols from the summary table above.</p>
+        <div class="watchlist-grid" id="watchlistGrid">
+          <div class="watchlist-empty">
+            <div class="watchlist-empty-icon">⭐</div>
+            <div>Click ★ on a row in <a href="#rollingSummarySection">Rolling Summary</a> above to add symbols here.</div>
+          </div>
         </div>
       </section>
 

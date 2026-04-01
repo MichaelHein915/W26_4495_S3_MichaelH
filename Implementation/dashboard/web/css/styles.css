@@ -640,6 +640,15 @@ select:focus { outline: none; border-color: var(--accent-blue); box-shadow: 0 0 
 
 .watchlist-empty-icon { font-size: 1.5rem; opacity: 0.5; margin-bottom: 0.35rem; }
 
+.watchlist-empty a {
+  color: var(--accent-blue);
+  text-decoration: none;
+}
+
+.watchlist-empty a:hover {
+  text-decoration: underline;
+}
+
 /* ─── Top Movers ──────────────────────────────────────────────────── */
 
 .top-movers {
@@ -729,6 +738,32 @@ select:focus { outline: none; border-color: var(--accent-blue); box-shadow: 0 0 
   color: var(--text-muted);
   font-size: 0.82rem;
   margin: -0.25rem 0 0.75rem;
+}
+
+.section-hint {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  margin: -0.35rem 0 0.85rem;
+  line-height: 1.45;
+}
+
+.section-hint a {
+  color: var(--accent-blue);
+  text-decoration: none;
+}
+
+.section-hint a:hover {
+  text-decoration: underline;
+}
+
+.section-hint--tight {
+  margin-top: -0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+#rollingSummarySection,
+#watchlistSection {
+  scroll-margin-top: 5.5rem;
 }
 
 /* ─── Table ───────────────────────────────────────────────────────── */
