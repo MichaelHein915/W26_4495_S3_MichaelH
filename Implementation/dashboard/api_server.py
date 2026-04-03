@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, make_response, request, send_from_directory
 from kafka import KafkaConsumer
 from prometheus_client import make_wsgi_app
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
@@ -101,6 +101,20 @@ def _before_request():
     request.start_time = time.time()
 
 
+@app.before_request
+def _cors_preflight():
+    """Allow dev UIs (e.g. Live Server on another port) to call /api/* via fetch."""
+    if request.method != "OPTIONS" or not request.path.startswith("/api/"):
+        return None
+    resp = make_response("", 204)
+    origin = request.headers.get("Origin", "*")
+    resp.headers["Access-Control-Allow-Origin"] = origin
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    resp.headers["Access-Control-Max-Age"] = "86400"
+    return resp
+
+
 @app.after_request
 def _after_request(response):
     if hasattr(request, "start_time"):
@@ -109,6 +123,15 @@ def _after_request(response):
         DASHBOARD_REQUEST_DURATION.labels(endpoint=str(endpoint)).observe(
             time.time() - request.start_time
         )
+    if request.path.startswith("/api/"):
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Vary"] = "Origin"
+        else:
+            response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     return response
 
 

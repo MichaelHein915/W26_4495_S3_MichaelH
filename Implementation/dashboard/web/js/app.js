@@ -1,4 +1,53 @@
-const API_BASE = '';
+/** Set after first successful /api/dashboard response ('' = same origin as the page). */
+let lockedApiBase = null;
+
+function readConfiguredApiBase() {
+  try {
+    const ls = localStorage.getItem('cryptoStreamApiBase');
+    if (ls != null && ls.trim() !== '') return ls.trim().replace(/\/$/, '');
+  } catch (e) { /* ignore */ }
+  const meta = document.querySelector('meta[name="crypto-stream-api-base"]');
+  const c = meta?.getAttribute('content');
+  if (c != null && c.trim() !== '') return c.trim().replace(/\/$/, '');
+  return null;
+}
+
+function collectApiBaseCandidates() {
+  const seen = new Set();
+  const bases = [];
+  const add = (b) => {
+    const s = b === '' || b == null ? '' : String(b).trim().replace(/\/$/, '');
+    const key = s || '__root__';
+    if (seen.has(key)) return;
+    seen.add(key);
+    bases.push(s);
+  };
+  const cfg = readConfiguredApiBase();
+  if (cfg != null) add(cfg);
+  add('');
+  const port = location.port;
+  const on5000 = port === '5000' || port === '';
+  if (!on5000) {
+    add(`${location.protocol}//${location.hostname}:5000`);
+  }
+  return bases;
+}
+
+function joinApiUrl(path, base) {
+  const p = path.startsWith('/') ? path : `/${path}`;
+  if (base === '' || base == null) return p;
+  return `${String(base).replace(/\/$/, '')}${p}`;
+}
+
+function currentApiBase() {
+  if (lockedApiBase !== null) return lockedApiBase;
+  const cfg = readConfiguredApiBase();
+  return cfg != null ? cfg : '';
+}
+
+function svgIcon(name, cls = '') {
+  return `<svg class="icon ${cls}"><use href="#icon-${name}"/></svg>`;
+}
 
 let barChart = null;
 let lineChart = null;
@@ -123,7 +172,7 @@ function renderWatchlist(metrics) {
   if (!favorites.length) {
     watchlistGridEl.innerHTML = `
       <div class="watchlist-empty">
-        <div class="watchlist-empty-icon">⭐</div>
+        <div class="watchlist-empty-icon">${svgIcon('star', 'icon-lg')}</div>
         <div>Click ★ on a row in <a href="#rollingSummarySection">Rolling Summary</a> above to add symbols here.</div>
       </div>`;
     return;
@@ -186,19 +235,25 @@ function renderMarketInsights(metrics) {
   const mostActive = [...metrics].sort((a, b) => b.trade_count - a.trade_count)[0];
   const activeEl = el('insightMostActive');
   if (activeEl && mostActive) {
-    activeEl.textContent = `${mostActive.product_id} (${fmt(mostActive.trade_count)})`;
+    const sym = mostActive.product_id.replace('-USD', '');
+    activeEl.textContent = `${sym} (${fmt(mostActive.trade_count)})`;
+    activeEl.title = `${mostActive.product_id} — ${fmt(mostActive.trade_count)} trades`;
   }
 
   const highVol = [...metrics].sort((a, b) => b.total_volume_qty - a.total_volume_qty)[0];
   const volEl = el('insightHighVol');
   if (volEl && highVol) {
-    volEl.textContent = `${highVol.product_id} (${fmtQuantity(highVol.total_volume_qty)})`;
+    const sym = highVol.product_id.replace('-USD', '');
+    volEl.textContent = `${sym} (${fmtQuantity(highVol.total_volume_qty)})`;
+    volEl.title = `${highVol.product_id} — ${fmtQuantity(highVol.total_volume_qty)} volume`;
   }
 
   const mostVolatile = [...metrics].sort((a, b) => b.volatility_usd - a.volatility_usd)[0];
   const volatileEl = el('insightVolatile');
   if (volatileEl && mostVolatile) {
-    volatileEl.textContent = `${mostVolatile.product_id} ($${mostVolatile.volatility_usd.toFixed(2)})`;
+    const sym = mostVolatile.product_id.replace('-USD', '');
+    volatileEl.textContent = `${sym} ($${mostVolatile.volatility_usd.toFixed(2)})`;
+    volatileEl.title = `${mostVolatile.product_id} — $${mostVolatile.volatility_usd.toFixed(4)} volatility`;
   }
 
   const notionalUsd = (m) => {
@@ -216,11 +271,11 @@ function renderMarketInsights(metrics) {
   if (domEl) {
     let label;
     if (totalN <= 0) {
-      label = '0.0% of notional USD';
+      label = '0.0% notional';
     } else {
       const pct = (btcN / totalN) * 100;
       const shown = pct > 0 && pct < 0.05 ? '<0.1' : pct.toFixed(1);
-      label = `${shown}% of notional USD`;
+      label = `${shown}% notional`;
     }
     domEl.textContent = label;
   }
@@ -231,10 +286,10 @@ function renderMarketInsights(metrics) {
 function applyTheme(theme) {
   if (theme === 'light') {
     document.documentElement.setAttribute('data-theme', 'light');
-    el('themeIcon').textContent = '🌙';
+    el('themeIcon').innerHTML = svgIcon('moon');
   } else {
     document.documentElement.removeAttribute('data-theme');
-    el('themeIcon').textContent = '☀';
+    el('themeIcon').innerHTML = svgIcon('sun');
   }
   localStorage.setItem('theme', theme);
 
@@ -265,7 +320,7 @@ function updateNotifButton() {
   const btn = el('notifToggle');
   if (notificationsEnabled) btn.classList.add('active');
   else btn.classList.remove('active');
-  el('notifIcon').textContent = notificationsEnabled ? '🔔' : '🔕';
+  el('notifIcon').innerHTML = notificationsEnabled ? svgIcon('bell') : svgIcon('bell-off');
 }
 
 el('notifToggle').addEventListener('click', () => {
@@ -391,25 +446,39 @@ el('exportCsv')?.addEventListener('click', exportCsv);
 // ─── Data fetching ──────────────────────────────────────────────────
 
 async function fetchDashboard() {
-  try {
-    let url = `${API_BASE}/api/dashboard?window=${windowMinutes}`;
-    if (exchangeFilter) url += `&exchange=${encodeURIComponent(exchangeFilter)}`;
-    if (newsSpikeSymbolParam) {
-      url += `&spike_symbol=${encodeURIComponent(newsSpikeSymbolParam)}`;
+  const bases = lockedApiBase !== null ? [lockedApiBase] : collectApiBaseCandidates();
+  let lastErr = null;
+  for (const base of bases) {
+    try {
+      let path = `/api/dashboard?window=${windowMinutes}`;
+      if (exchangeFilter) path += `&exchange=${encodeURIComponent(exchangeFilter)}`;
+      if (newsSpikeSymbolParam) {
+        path += `&spike_symbol=${encodeURIComponent(newsSpikeSymbolParam)}`;
+      }
+      const url = joinApiUrl(path, base);
+      const res = await fetch(url);
+      if (!res.ok) {
+        lastErr = new Error(res.statusText);
+        continue;
+      }
+      const data = await res.json();
+      lockedApiBase = base;
+      return data;
+    } catch (err) {
+      lastErr = err;
+      console.error('Dashboard fetch failed:', err);
     }
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(res.statusText);
-    return await res.json();
-  } catch (err) {
-    console.error('Dashboard fetch failed:', err);
-    return null;
   }
+  if (lastErr) console.error('Dashboard fetch exhausted API bases:', bases, lastErr);
+  return null;
 }
 
 async function fetchCandles(symbol) {
   try {
-    let url = `${API_BASE}/api/candles?symbol=${encodeURIComponent(symbol)}&window=${windowMinutes}`;
-    if (exchangeFilter) url += `&exchange=${encodeURIComponent(exchangeFilter)}`;
+    const base = currentApiBase();
+    let path = `/api/candles?symbol=${encodeURIComponent(symbol)}&window=${windowMinutes}`;
+    if (exchangeFilter) path += `&exchange=${encodeURIComponent(exchangeFilter)}`;
+    const url = joinApiUrl(path, base);
     const res = await fetch(url);
     if (!res.ok) throw new Error(res.statusText);
     const data = await res.json();
@@ -475,6 +544,18 @@ function renderExchangeBar(exchangeStats) {
   });
 }
 
+let prevKpi = {};
+
+function updateKpiDelta(id, current, prev) {
+  const deltaEl = el(id);
+  if (!deltaEl || prev == null || prev === 0 || current == null) { if (deltaEl) deltaEl.textContent = ''; return; }
+  const pct = ((current - prev) / prev) * 100;
+  if (Math.abs(pct) < 0.01) { deltaEl.textContent = ''; deltaEl.className = 'kpi-delta'; return; }
+  const sign = pct > 0 ? '+' : '';
+  deltaEl.textContent = `${sign}${pct.toFixed(1)}%`;
+  deltaEl.className = `kpi-delta ${pct > 0 ? 'up' : 'down'}`;
+}
+
 function renderKPIs(data) {
   const s = data?.status || {};
   const trades = s.total_trades ?? 0;
@@ -489,6 +570,9 @@ function renderKPIs(data) {
   flashKpi('kpiExchanges', numExchanges);
   flashKpi('kpiFreshness', freshness);
 
+  updateKpiDelta('kpiTradesDelta', trades, prevKpi.trades);
+  updateKpiDelta('kpiVolumeDelta', volume, prevKpi.volume);
+
   animateValue(totalTradesEl, trades, 400, (v) => fmt(Math.round(v)));
   animateValue(liveSymbolsEl, symbols, 400, (v) => fmt(Math.round(v)));
   animateValue(totalVolumeEl, volume, 400, (v) => fmtQuantity(v));
@@ -497,6 +581,16 @@ function renderKPIs(data) {
   updatedAtEl.textContent = s.updated_at ?? '--:--:-- UTC';
   eventCountEl.textContent = fmt(s.event_count ?? 0);
   windowMinutesEl.textContent = s.window_minutes ?? windowMinutes;
+
+  // KPI footers
+  const tFooter = el('kpiTradesFooter');
+  if (tFooter && trades > 0) tFooter.textContent = `~${fmt(Math.round(trades / windowMinutes))}/min`;
+  const exFooter = el('kpiExchangesFooter');
+  if (exFooter && data?.exchange_stats?.exchanges) {
+    exFooter.textContent = data.exchange_stats.exchanges.map(e => e.exchange).join(' / ');
+  }
+
+  prevKpi = { trades, symbols, volume, freshness, numExchanges };
 
   document.querySelectorAll('.kpi-window').forEach((span) => { span.textContent = windowMinutes; });
   const summaryEl = el('tableSummaryWindow');
@@ -511,10 +605,12 @@ function renderTopMovers(metrics) {
   const gainer = sorted[sorted.length - 1];
   if (gainer.price_change_pct === 0 && loser.price_change_pct === 0) { section.style.display = 'none'; return; }
   section.style.display = 'flex';
-  el('topGainer').querySelector('.mover-text').textContent =
-    `${gainer.product_id} ${gainer.price_change_pct >= 0 ? '+' : ''}${gainer.price_change_pct}%`;
-  el('topLoser').querySelector('.mover-text').textContent =
-    `${loser.product_id} ${loser.price_change_pct >= 0 ? '+' : ''}${loser.price_change_pct}%`;
+  const gainerEl = el('topGainer');
+  gainerEl.querySelector('.mover-symbol').textContent = gainer.product_id;
+  gainerEl.querySelector('.mover-change').textContent = `${gainer.price_change_pct >= 0 ? '+' : ''}${gainer.price_change_pct}%`;
+  const loserEl = el('topLoser');
+  loserEl.querySelector('.mover-symbol').textContent = loser.product_id;
+  loserEl.querySelector('.mover-change').textContent = `${loser.price_change_pct >= 0 ? '+' : ''}${loser.price_change_pct}%`;
 }
 
 function drawSparkline(canvas, prices) {
@@ -572,7 +668,7 @@ function renderMetricsTable(metrics) {
     const searchActive = symbolSearchEl?.value?.trim() || directionFilter !== 'all';
     metricsBodyEl.innerHTML = searchActive
       ? '<tr class="empty-row"><td colspan="9"><div class="empty-state"><span class="empty-state-icon">🔍</span><div class="empty-state-title">No symbols match your filter</div><div class="empty-state-desc">Try a different search term or direction filter</div></div></td></tr>'
-      : '<tr class="empty-row"><td colspan="9"><div class="empty-state"><span class="empty-state-icon">📊</span><div class="empty-state-title">Waiting for trades…</div><div class="empty-state-desc">Start the producer to see live metrics. Data appears as trades stream in.</div></div></td></tr>';
+      : `<tr class="empty-row"><td colspan="9"><div class="empty-state"><span class="empty-state-icon">${svgIcon('bar-chart', 'icon-lg')}</span><div class="empty-state-title">Waiting for trades…</div><div class="empty-state-desc">Start the producer to see live metrics. Data appears as trades stream in.</div></div></td></tr>`;
     return;
   }
   metricsBodyEl.innerHTML = displayed.map((m) => {
@@ -626,7 +722,7 @@ function renderAlerts(alerts) {
   if (!alerts?.length) { alertsSectionEl.style.display = 'none'; return; }
   alertsSectionEl.style.display = 'block';
   alertsEl.innerHTML = alerts.map((a) =>
-    `<div class="alert"><span class="alert-icon">⚡</span> <strong>${a.product_id}</strong>: volume ${fmtQuantity(a.current_volume)} ` +
+    `<div class="alert"><span class="alert-icon">${svgIcon('zap')}</span> <strong>${a.product_id}</strong>: volume ${fmtQuantity(a.current_volume)} ` +
     `(baseline ${fmtQuantity(a.baseline_volume)}, <strong>${a.spike_ratio}x</strong>)</div>`
   ).join('');
   notifyAlerts(alerts);
@@ -640,7 +736,7 @@ function renderPriceAlerts(priceAlerts) {
   }
   priceAlertsSectionEl.style.display = 'block';
   priceAlertsEl.innerHTML = priceAlerts.map((a) =>
-    `<div class="alert alert-price"><span class="alert-icon">💰</span> <strong>${a.product_id}</strong>: ` +
+    `<div class="alert alert-price"><span class="alert-icon">${svgIcon('dollar')}</span> <strong>${a.product_id}</strong>: ` +
     `$${a.current_price.toLocaleString()} ${a.direction === 'above' ? '≥' : '≤'} $${a.threshold_price.toLocaleString()}</div>`
   ).join('');
 }
@@ -653,7 +749,7 @@ function renderAnomalyAlerts(anomalies) {
   }
   anomalyAlertsSectionEl.style.display = 'block';
   anomalyAlertsEl.innerHTML = anomalies.map((a) =>
-    `<div class="alert alert-anomaly"><span class="alert-icon">🔮</span> <strong>${a.product_id}</strong>: ` +
+    `<div class="alert alert-anomaly"><span class="alert-icon">${svgIcon('cpu')}</span> <strong>${a.product_id}</strong>: ` +
     `score ${a.anomaly_score} · trades ${a.trade_count} · vol $${a.volatility_usd?.toFixed(2) ?? '-'} · ` +
     `change ${a.price_change_pct >= 0 ? '+' : ''}${a.price_change_pct?.toFixed(2) ?? '-'}%</div>`
   ).join('');
@@ -1838,13 +1934,20 @@ document.querySelectorAll('.window-btn').forEach((btn) => {
 
 async function refresh() {
   if (!liveToggleEl.checked) return;
-  const data = await fetchDashboard();
+  let data;
+  try {
+    data = await fetchDashboard();
+  } finally {
+    document.body.classList.remove('loading');
+  }
   if (!data) {
-    kafkaStatusEl.querySelector('.value').textContent = 'API error';
-    setStatusClass(kafkaStatusEl, 'error');
+    const kv = kafkaStatusEl?.querySelector('.value');
+    if (kv) {
+      kv.textContent = 'API unreachable — open /dashboard on port 5000 or set meta crypto-stream-api-base';
+    }
+    if (kafkaStatusEl) setStatusClass(kafkaStatusEl, 'error');
     return;
   }
-  document.body.classList.remove('loading');
   sparklinesCache = data.sparklines || {};
   renderStatus(data);
   renderExchangeBar(data.exchange_stats);
@@ -1973,7 +2076,7 @@ aiChatFab?.addEventListener('click', toggleAiChat);
 aiChatClose?.addEventListener('click', toggleAiChat);
 
 function checkAiHealth() {
-  fetch(`${API_BASE}/api/ai/health`)
+  fetch(joinApiUrl('/api/ai/health', currentApiBase()))
     .then((r) => r.json())
     .then((data) => {
       aiEnabled = data.enabled !== false;
@@ -1997,7 +2100,7 @@ function checkAiHealth() {
 }
 
 function fetchAiInsight() {
-  fetch(`${API_BASE}/api/ai/insights`)
+  fetch(joinApiUrl('/api/ai/insights', currentApiBase()))
     .then((r) => r.json())
     .then((data) => {
       if (!data.enabled) return;
@@ -2060,7 +2163,7 @@ async function sendAiMessage(text) {
   showTypingIndicator();
 
   try {
-    const resp = await fetch(`${API_BASE}/api/ai/chat`, {
+    const resp = await fetch(joinApiUrl('/api/ai/chat', currentApiBase()), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
