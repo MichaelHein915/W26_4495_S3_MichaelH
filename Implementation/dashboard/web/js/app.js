@@ -2040,6 +2040,196 @@ document.querySelectorAll('.collapsible-trigger').forEach((btn) => {
   });
 });
 
+// ─── Alert rules & history (dashboard API) ───────────────────────────
+
+function escapeHtmlAlert(s) {
+  if (s == null) return '';
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+function addPriceRuleRow(symbol = '', direction = 'above', price = '') {
+  const container = el('alertPriceRulesRows');
+  if (!container) return;
+  const row = document.createElement('div');
+  row.className = 'alert-price-rule-row';
+  row.innerHTML = `
+    <div class="profile-field">
+      <label>Symbol</label>
+      <input type="text" class="profile-input" data-pr-symbol placeholder="BTC-USD" autocomplete="off">
+    </div>
+    <div class="profile-field">
+      <label>Dir</label>
+      <select class="profile-input" data-pr-direction>
+        <option value="above">Above</option>
+        <option value="below">Below</option>
+      </select>
+    </div>
+    <div class="profile-field">
+      <label>Price (USD)</label>
+      <input type="number" class="profile-input" data-pr-price step="any" min="0" placeholder="100000">
+    </div>
+    <button type="button" class="alert-price-rule-remove" data-pr-remove>Remove</button>
+  `;
+  const symInp = row.querySelector('[data-pr-symbol]');
+  const dirSel = row.querySelector('[data-pr-direction]');
+  const prInp = row.querySelector('[data-pr-price]');
+  if (symInp) symInp.value = symbol;
+  if (dirSel) dirSel.value = direction === 'below' ? 'below' : 'above';
+  if (prInp && price !== '' && price != null) prInp.value = String(price);
+  row.querySelector('[data-pr-remove]')?.addEventListener('click', () => row.remove());
+  container.appendChild(row);
+}
+
+function applyAlertSettingsToForm(settings) {
+  if (!settings) return;
+  const arb = el('alertArbPct');
+  if (arb) arb.value = settings.arbitrage_threshold_pct;
+  const vol = el('alertVolRatio');
+  if (vol) vol.value = settings.volume_spike_ratio;
+  const cd = el('alertCooldown');
+  if (cd) cd.value = settings.alert_cooldown_sec;
+  const ac = el('alertAnomContam');
+  if (ac) ac.value = settings.anomaly_contamination;
+  const ae = el('alertAnomalyEnabled');
+  if (ae) ae.checked = !!settings.anomaly_enabled;
+  const container = el('alertPriceRulesRows');
+  if (container) {
+    container.innerHTML = '';
+    const pts = settings.price_thresholds || [];
+    if (pts.length === 0) {
+      addPriceRuleRow();
+    } else {
+      pts.forEach((p) => addPriceRuleRow(p.symbol, p.direction, p.price));
+    }
+  }
+}
+
+function alertRulesCollectPayload() {
+  const rows = document.querySelectorAll('.alert-price-rule-row');
+  const price_thresholds = [];
+  rows.forEach((row) => {
+    const sym = row.querySelector('[data-pr-symbol]')?.value?.trim().toUpperCase();
+    const dir = row.querySelector('[data-pr-direction]')?.value;
+    const prRaw = row.querySelector('[data-pr-price]')?.value;
+    const pr = parseFloat(prRaw);
+    if (sym && (dir === 'above' || dir === 'below') && Number.isFinite(pr) && pr > 0) {
+      price_thresholds.push({ symbol: sym, direction: dir, price: pr });
+    }
+  });
+  return {
+    arbitrage_threshold_pct: parseFloat(el('alertArbPct')?.value),
+    volume_spike_ratio: parseFloat(el('alertVolRatio')?.value),
+    alert_cooldown_sec: parseInt(el('alertCooldown')?.value, 10),
+    anomaly_contamination: parseFloat(el('alertAnomContam')?.value),
+    anomaly_enabled: !!el('alertAnomalyEnabled')?.checked,
+    price_thresholds,
+  };
+}
+
+function renderAlertHistory(events) {
+  const tbody = el('alertHistoryBody');
+  if (!tbody) return;
+  if (!events || !events.length) {
+    tbody.innerHTML = '<tr><td colspan="3" class="text-muted">No notifications recorded yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = events.map((ev) => `
+    <tr>
+      <td>${escapeHtmlAlert(ev.ts)}</td>
+      <td><span class="ah-type">${escapeHtmlAlert(ev.type)}</span></td>
+      <td>${escapeHtmlAlert(ev.summary)}</td>
+    </tr>
+  `).join('');
+}
+
+function setAlertRulesStatus(msg, kind) {
+  const s = el('alertRulesStatus');
+  if (!s) return;
+  s.textContent = msg || '';
+  s.classList.remove('alert-rules-status--ok', 'alert-rules-status--err');
+  if (kind === 'ok') s.classList.add('alert-rules-status--ok');
+  if (kind === 'err') s.classList.add('alert-rules-status--err');
+}
+
+async function loadAlertSettingsAndHistory() {
+  const bases = lockedApiBase !== null ? [lockedApiBase] : collectApiBaseCandidates();
+  let ok = false;
+  for (const base of bases) {
+    try {
+      const r = await fetch(joinApiUrl('/api/alert-settings', base));
+      if (!r.ok) continue;
+      const j = await r.json();
+      applyAlertSettingsToForm(j.settings);
+      if (lockedApiBase === null) lockedApiBase = base;
+      const h = await fetch(joinApiUrl('/api/alert-history?limit=40', base));
+      if (h.ok) {
+        const hj = await h.json();
+        renderAlertHistory(hj.events);
+      }
+      ok = true;
+      break;
+    } catch (e) {
+      console.warn('Alert settings fetch failed', e);
+    }
+  }
+  if (!ok && el('alertHistoryBody')) {
+    el('alertHistoryBody').innerHTML = '<tr><td colspan="3" class="text-muted">API unreachable.</td></tr>';
+  }
+}
+
+(function initAlertRulesPanel() {
+  const form = el('alertRulesForm');
+  if (!form) return;
+
+  el('alertAddPriceRule')?.addEventListener('click', () => addPriceRuleRow());
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    setAlertRulesStatus('Saving…', null);
+    const payload = alertRulesCollectPayload();
+    try {
+      const r = await fetch(joinApiUrl('/api/alert-settings', currentApiBase()), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setAlertRulesStatus(j.error || r.statusText, 'err');
+        return;
+      }
+      applyAlertSettingsToForm(j.settings);
+      setAlertRulesStatus('Saved. Thresholds apply on the next dashboard poll.', 'ok');
+      showToast('Alert rules saved');
+      const h = await fetch(joinApiUrl('/api/alert-history?limit=40', currentApiBase()));
+      if (h.ok) renderAlertHistory((await h.json()).events);
+    } catch (err) {
+      setAlertRulesStatus(String(err), 'err');
+    }
+  });
+
+  el('alertRulesReset')?.addEventListener('click', async () => {
+    setAlertRulesStatus('Resetting…', null);
+    try {
+      const r = await fetch(joinApiUrl('/api/alert-settings/reset', currentApiBase()), { method: 'POST' });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setAlertRulesStatus(j.error || r.statusText, 'err');
+        return;
+      }
+      applyAlertSettingsToForm(j.settings);
+      setAlertRulesStatus('Reverted to environment defaults (saved file removed).', 'ok');
+      showToast('Alert rules reset');
+    } catch (err) {
+      setAlertRulesStatus(String(err), 'err');
+    }
+  });
+
+  loadAlertSettingsAndHistory();
+})();
+
 startPolling();
 
 // ─── AI Chat Assistant ──────────────────────────────────────────────

@@ -369,6 +369,71 @@
         </div>
       </section>
 
+      <!-- Alert rules (persisted JSON; Slack/SMTP still from env) -->
+      <section class="section alert-rules-section" id="alertRulesSection">
+        <div class="section-header">
+          <div class="section-icon section-icon--cyan"><svg class="icon"><use href="#icon-bell"/></svg></div>
+          <h2>Alert rules</h2>
+        </div>
+        <p class="section-desc section-desc--tight">
+          Thresholds save to <code class="inline-code">data/alert_settings.json</code> (or <code class="inline-code">ALERT_SETTINGS_PATH</code>).
+          Delivery uses Slack/email from your environment — this panel only tunes when notifications fire.
+        </p>
+        <form id="alertRulesForm" class="alert-rules-form">
+          <div class="alert-rules-grid">
+            <div class="profile-field">
+              <label for="alertArbPct">Min arbitrage spread (%)</label>
+              <input type="number" id="alertArbPct" class="profile-input" step="0.01" min="0.01" max="50" required>
+            </div>
+            <div class="profile-field">
+              <label for="alertVolRatio">Volume spike ratio (× baseline)</label>
+              <input type="number" id="alertVolRatio" class="profile-input" step="0.01" min="1.01" max="100" required>
+            </div>
+            <div class="profile-field">
+              <label for="alertCooldown">Cooldown between repeats (sec)</label>
+              <input type="number" id="alertCooldown" class="profile-input" step="1" min="10" max="3600" required>
+            </div>
+            <div class="profile-field">
+              <label for="alertAnomContam">Anomaly contamination</label>
+              <input type="number" id="alertAnomContam" class="profile-input" step="0.01" min="0.01" max="0.5" required>
+            </div>
+          </div>
+          <label class="alert-rules-toggle">
+            <input type="checkbox" id="alertAnomalyEnabled">
+            <span>Enable ML anomaly notifications</span>
+          </label>
+          <div class="alert-price-rules">
+            <div class="alert-price-rules-head">
+              <span class="alert-price-rules-title">Price cross rules</span>
+              <button type="button" class="filter-btn" id="alertAddPriceRule">+ Add rule</button>
+            </div>
+            <p class="section-hint section-hint--tight">Fire when last price crosses above or below your level (same window as the dashboard).</p>
+            <div id="alertPriceRulesRows" class="alert-price-rules-rows"></div>
+          </div>
+          <div class="alert-rules-actions">
+            <button type="submit" class="profile-save-btn" id="alertRulesSave">Save rules</button>
+            <button type="button" class="profile-reset-btn" id="alertRulesReset">Reset to .env defaults</button>
+          </div>
+          <p class="alert-rules-status" id="alertRulesStatus" role="status"></p>
+        </form>
+        <h3 class="alert-history-title">Recent notifications sent</h3>
+        <p class="section-hint section-hint--tight">Only deliveries that passed cooldown and reached Slack/email.</p>
+        <div class="table-wrap alert-history-wrap">
+          <table class="metrics-table alert-history-table">
+            <thead>
+              <tr>
+                <th>Time (UTC)</th>
+                <th>Type</th>
+                <th>Summary</th>
+              </tr>
+            </thead>
+            <tbody id="alertHistoryBody">
+              <tr><td colspan="3" class="text-muted">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <!-- Alerts -->
       <section class="section alerts-section" id="alertsSection">
         <div class="section-header">
@@ -383,7 +448,7 @@
           <div class="section-icon section-icon--blue"><svg class="icon"><use href="#icon-dollar"/></svg></div>
           <h2>Price Threshold Alerts</h2>
         </div>
-        <p class="section-desc">Configured via ALERT_PRICE_THRESHOLDS env var</p>
+        <p class="section-desc">Rules from <a href="#alertRulesSection">Alert rules</a> (or env until you save)</p>
         <div class="alerts" id="priceAlerts"></div>
       </section>
 

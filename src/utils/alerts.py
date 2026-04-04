@@ -18,7 +18,17 @@ _last_arbitrage_alert: dict[str, datetime] = {}
 _last_volume_alert: dict[str, datetime] = {}
 _last_price_alert: dict[str, datetime] = {}
 _last_anomaly_alert: dict[str, datetime] = {}
-_alert_cooldown_sec = 60  # Don't re-alert same condition within 60 seconds
+_alert_cooldown_sec = 60  # Don't re-alert same condition within N seconds (overridable from dashboard)
+
+
+def set_alert_cooldown_seconds(sec: int) -> None:
+    """Called when operator updates alert settings from the dashboard."""
+    global _alert_cooldown_sec
+    _alert_cooldown_sec = max(1, int(sec))
+
+
+def get_alert_cooldown_seconds() -> int:
+    return _alert_cooldown_sec
 
 
 def _send_slack(webhook_url: str, text: str, blocks: list[dict] | None = None) -> bool:

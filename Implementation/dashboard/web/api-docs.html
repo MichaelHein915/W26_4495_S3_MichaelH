@@ -13,6 +13,8 @@
     .endpoint h2 { margin: 0 0 0.5rem; font-size: 1.1rem; }
     .method { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 600; font-size: 0.8rem; margin-right: 0.5rem; }
     .method.get { background: rgba(63, 185, 80, 0.2); color: var(--accent-green); }
+    .method.put { background: rgba(88, 166, 255, 0.2); color: var(--accent-blue); }
+    .method.post { background: rgba(210, 153, 34, 0.2); color: var(--accent-yellow); }
     .path { font-family: var(--font-mono); font-size: 0.95rem; color: var(--accent-blue); }
     .params { margin-top: 0.75rem; font-size: 0.9rem; }
     .params table { width: 100%; border-collapse: collapse; }
@@ -62,6 +64,27 @@
       <h2><span class="method get">GET</span><span class="path">/health</span></h2>
       <p>Health check endpoint. Returns Kafka connectivity status and data freshness. Use for load balancers and monitoring.</p>
       <p><strong>Response codes:</strong> <code>200</code> = healthy, <code>503</code> = degraded (Kafka error or stale data)</p>
+    </div>
+
+    <div class="endpoint">
+      <h2><span class="method get">GET</span><span class="path">/api/alert-settings</span></h2>
+      <p>Returns operator-tunable alert thresholds (merged from <code>data/alert_settings.json</code> if present, otherwise environment defaults). Slack/SMTP are not exposed.</p>
+      <p><strong>Response:</strong> <code>settings</code> (arbitrage_threshold_pct, volume_spike_ratio, price_thresholds, anomaly_enabled, anomaly_contamination, alert_cooldown_sec) and <code>persisted_to_disk</code>.</p>
+    </div>
+
+    <div class="endpoint">
+      <h2><span class="method put">PUT</span><span class="path">/api/alert-settings</span></h2>
+      <p>Validates and saves the same JSON fields as GET returns. Triggers anomaly detector reset when contamination or enablement changes.</p>
+    </div>
+
+    <div class="endpoint">
+      <h2><span class="method post">POST</span><span class="path">/api/alert-settings/reset</span></h2>
+      <p>Deletes the saved JSON file and restores thresholds from environment variables.</p>
+    </div>
+
+    <div class="endpoint">
+      <h2><span class="method get">GET</span><span class="path">/api/alert-history</span></h2>
+      <p>Recent Slack/email notifications that were actually sent (after cooldown). Query: <code>limit</code> (1–200, default 50).</p>
     </div>
 
     <div class="endpoint">

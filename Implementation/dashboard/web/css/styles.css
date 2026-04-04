@@ -2776,6 +2776,169 @@ body:not(.loading) .skeleton-row { display: none; }
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Alert rules panel */
+.alert-rules-section .inline-code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+}
+
+.alert-rules-form {
+  margin-top: var(--space-md);
+}
+
+.alert-rules-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-lg);
+  margin-bottom: var(--space-lg);
+}
+
+.alert-rules-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.alert-rules-toggle input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent-cyan);
+}
+
+.alert-price-rules {
+  margin-bottom: var(--space-lg);
+}
+
+.alert-price-rules-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xs);
+}
+
+.alert-price-rules-title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.alert-price-rules-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.alert-price-rule-row {
+  display: grid;
+  grid-template-columns: 1fr 100px 1fr auto;
+  gap: var(--space-sm);
+  align-items: end;
+}
+
+@media (max-width: 720px) {
+  .alert-price-rule-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .alert-price-rule-row .alert-price-rule-remove {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}
+
+.alert-price-rule-remove {
+  padding: 0.45rem 0.65rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.alert-price-rule-remove:hover {
+  color: var(--accent-red);
+  border-color: var(--accent-red);
+}
+
+.alert-rules-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+}
+
+/* profile-save-btn uses flex:1 for the dropdown footer; here we want equal visual alignment */
+.alert-rules-actions .profile-save-btn {
+  flex: 0 0 auto;
+  min-height: 2.375rem;
+  padding: 0.5rem 1.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+}
+
+.alert-rules-actions .profile-reset-btn {
+  flex: 0 0 auto;
+  min-height: 2.375rem;
+  padding: 0.5rem 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.alert-rules-status {
+  margin-top: var(--space-md);
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  min-height: 1.25em;
+}
+
+.alert-rules-status.alert-rules-status--ok {
+  color: var(--accent-green);
+}
+
+.alert-rules-status.alert-rules-status--err {
+  color: var(--accent-red);
+}
+
+.alert-history-title {
+  margin-top: var(--space-xl);
+  margin-bottom: var(--space-xs);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.alert-history-wrap {
+  margin-top: var(--space-sm);
+}
+
+.alert-history-table td {
+  font-size: 0.85rem;
+  vertical-align: top;
+}
+
+.alert-history-table .ah-type {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--accent-cyan);
+  white-space: nowrap;
+}
+
 /* Responsive */
 @media (max-width: 640px) {
   .profile-dropdown {

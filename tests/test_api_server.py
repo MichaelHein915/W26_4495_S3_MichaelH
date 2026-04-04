@@ -16,6 +16,18 @@ def api():
     mock_cfg.kafka_server = "localhost:9092"
     mock_cfg.topic_raw = "crypto.trades.raw"
     mock_cfg.log_level = "WARNING"
+    mock_cfg.alert_arbitrage_threshold_pct = 0.3
+    mock_cfg.alert_volume_spike_ratio = 2.0
+    mock_cfg.alert_price_thresholds = []
+    mock_cfg.alert_anomaly_enabled = True
+    mock_cfg.anomaly_contamination = 0.05
+    mock_cfg.slack_webhook_url = ""
+    mock_cfg.alert_email_to = ""
+    mock_cfg.smtp_host = ""
+    mock_cfg.smtp_port = 587
+    mock_cfg.smtp_user = ""
+    mock_cfg.smtp_password = ""
+    mock_cfg.smtp_use_tls = True
 
     with patch("utils.config.get_config", return_value=mock_cfg):
         import importlib
@@ -249,3 +261,61 @@ class TestHealthEndpoint:
         data = resp.get_json()
         assert data["status"] == "ok"
         assert data["kafka_connected"] is True
+
+
+class TestAlertSettingsEndpoints:
+    @pytest.fixture()
+    def client(self, api):
+        api.app.config["TESTING"] = True
+        with api.app.test_client() as c:
+            yield c
+
+    def test_alert_settings_get_defaults(self, client, tmp_path, monkeypatch):
+        monkeypatch.setenv("ALERT_SETTINGS_PATH", str(tmp_path / "alert_settings.json"))
+        monkeypatch.setenv("ALERT_HISTORY_PATH", str(tmp_path / "alert_history.json"))
+        resp = client.get("/api/alert-settings")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["persisted_to_disk"] is False
+        assert data["settings"]["arbitrage_threshold_pct"] == 0.3
+        assert data["settings"]["alert_cooldown_sec"] == 60
+
+    def test_alert_settings_put_roundtrip_and_reset(self, client, tmp_path, monkeypatch):
+        monkeypatch.setenv("ALERT_SETTINGS_PATH", str(tmp_path / "alert_settings.json"))
+        monkeypatch.setenv("ALERT_HISTORY_PATH", str(tmp_path / "alert_history.json"))
+        body = {
+            "arbitrage_threshold_pct": 1.25,
+            "volume_spike_ratio": 3.0,
+            "price_thresholds": [{"symbol": "BTC-USD", "direction": "above", "price": 99000}],
+            "anomaly_enabled": False,
+            "anomaly_contamination": 0.1,
+            "alert_cooldown_sec": 120,
+        }
+        resp = client.put("/api/alert-settings", json=body)
+        assert resp.status_code == 200
+        assert resp.get_json()["settings"]["arbitrage_threshold_pct"] == 1.25
+        assert (tmp_path / "alert_settings.json").is_file()
+
+        resp2 = client.get("/api/alert-settings")
+        assert resp2.get_json()["persisted_to_disk"] is True
+        assert resp2.get_json()["settings"]["price_thresholds"][0]["symbol"] == "BTC-USD"
+
+        resp3 = client.post("/api/alert-settings/reset")
+        assert resp3.status_code == 200
+        assert resp3.get_json()["settings"]["arbitrage_threshold_pct"] == 0.3
+        assert not (tmp_path / "alert_settings.json").exists()
+
+    def test_alert_settings_validation_error(self, client, tmp_path, monkeypatch):
+        monkeypatch.setenv("ALERT_SETTINGS_PATH", str(tmp_path / "alert_settings.json"))
+        resp = client.put(
+            "/api/alert-settings",
+            json={"arbitrage_threshold_pct": 0.001},
+        )
+        assert resp.status_code == 400
+        assert "error" in resp.get_json()
+
+    def test_alert_history_empty(self, client, tmp_path, monkeypatch):
+        monkeypatch.setenv("ALERT_HISTORY_PATH", str(tmp_path / "hist.json"))
+        resp = client.get("/api/alert-history")
+        assert resp.status_code == 200
+        assert resp.get_json()["events"] == []

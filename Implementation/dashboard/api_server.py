@@ -25,7 +25,13 @@ if _dashboard_dir not in sys.path:
     sys.path.insert(0, _dashboard_dir)
 
 from utils.config import get_config  # noqa: E402
-from utils.alerts import alert_arbitrage, alert_volume_spike, alert_price_threshold, alert_anomaly  # noqa: E402
+from utils.alerts import (  # noqa: E402
+    alert_arbitrage,
+    alert_volume_spike,
+    alert_price_threshold,
+    alert_anomaly,
+    set_alert_cooldown_seconds,
+)
 from utils.anomaly import AnomalyDetector  # noqa: E402
 from utils.metrics import (  # noqa: E402
     DASHBOARD_EVENTS,
@@ -56,6 +62,16 @@ from analytics import (  # noqa: E402
     compute_news_spike_vs_price as _compute_news_spike_vs_price,
 )
 from ai_routes import ai_bp, start_insight_loop  # noqa: E402
+from alert_settings_store import (  # noqa: E402
+    get_alert_tuning,
+    save_alert_tuning,
+    reset_alert_settings_file,
+    validate_tuning_payload,
+    record_alert_event,
+    get_alert_history,
+    load_history_from_disk,
+    saved_alert_settings_exist,
+)
 
 log = logging.getLogger(__name__)
 
@@ -109,7 +125,7 @@ def _cors_preflight():
     resp = make_response("", 204)
     origin = request.headers.get("Origin", "*")
     resp.headers["Access-Control-Allow-Origin"] = origin
-    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, OPTIONS"
     resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
     resp.headers["Access-Control-Max-Age"] = "86400"
     return resp
@@ -130,7 +146,7 @@ def _after_request(response):
             response.headers["Vary"] = "Origin"
         else:
             response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, OPTIONS"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     return response
 
@@ -357,16 +373,19 @@ def _build_dashboard_payload(
         events = [e for e in events if e.get("exchange", "coinbase").lower() == exchange_filter]
 
     config = get_config()
-    arbitrage = _compute_arbitrage_opportunities(events, threshold_pct=config.alert_arbitrage_threshold_pct)
+    tuning = get_alert_tuning(config)
+    arbitrage = _compute_arbitrage_opportunities(events, threshold_pct=tuning.arbitrage_threshold_pct)
 
     metrics = _compute_metrics(events)
     anomalies = []
-    if config.alert_anomaly_enabled and metrics:
+    if tuning.anomaly_enabled and metrics:
         with _state_lock:
-            if _state["anomaly_detector"] is None:
+            applied = _state.get("anomaly_contamination_applied")
+            if _state["anomaly_detector"] is None or applied != tuning.anomaly_contamination:
                 _state["anomaly_detector"] = AnomalyDetector(
-                    contamination=config.anomaly_contamination,
+                    contamination=tuning.anomaly_contamination,
                 )
+                _state["anomaly_contamination_applied"] = tuning.anomaly_contamination
         detector = _state["anomaly_detector"]
         try:
             anomalies = detector.detect(metrics)
@@ -382,10 +401,12 @@ def _build_dashboard_payload(
     heatmap_data = _compute_heatmap_data(events)
     recent_trades = _get_recent_trades(events, limit=25)
     volume_history = {k: deque(v, maxlen=30) for k, v in meta.get("volume_history", {}).items()}
-    alerts, volume_history = _compute_volume_spikes(metrics, volume_history, threshold=config.alert_volume_spike_ratio)
+    alerts, volume_history = _compute_volume_spikes(
+        metrics, volume_history, threshold=tuning.volume_spike_ratio
+    )
 
     price_alerts = []
-    for symbol, direction, threshold_price in config.alert_price_thresholds:
+    for symbol, direction, threshold_price in tuning.price_thresholds:
         for m in metrics:
             if m["product_id"].upper() == symbol.upper():
                 current = float(m["avg_price_usd"])
@@ -500,15 +521,18 @@ def _build_dashboard_payload(
 
 def _alert_loop():
     """Background thread: periodically check for and fire alert notifications."""
-    config = get_config()
     time.sleep(ALERT_INTERVAL_SEC)
 
     while _state["running"]:
         try:
+            config = get_config()
+            tuning = get_alert_tuning(config)
+            set_alert_cooldown_seconds(tuning.alert_cooldown_sec)
+
             payload = _build_dashboard_payload(WINDOW_MINUTES, "")
 
             for opp in payload.get("arbitrage", []):
-                alert_arbitrage(
+                ok = alert_arbitrage(
                     config.slack_webhook_url,
                     opp["product_id"],
                     opp["cheap_exchange"],
@@ -523,9 +547,21 @@ def _alert_loop():
                     smtp_password=config.smtp_password,
                     smtp_use_tls=config.smtp_use_tls,
                 )
+                if ok:
+                    record_alert_event(
+                        "arbitrage",
+                        f"{opp['product_id']}: {opp['spread_pct']:.2f}% spread "
+                        f"({opp['cheap_exchange']} → {opp['expensive_exchange']})",
+                        {
+                            "product_id": opp["product_id"],
+                            "spread_pct": opp["spread_pct"],
+                            "cheap_exchange": opp["cheap_exchange"],
+                            "expensive_exchange": opp["expensive_exchange"],
+                        },
+                    )
 
             for a in payload.get("anomalies", []):
-                alert_anomaly(
+                ok = alert_anomaly(
                     config.slack_webhook_url,
                     a["product_id"],
                     a["anomaly_score"],
@@ -540,9 +576,15 @@ def _alert_loop():
                     smtp_password=config.smtp_password,
                     smtp_use_tls=config.smtp_use_tls,
                 )
+                if ok:
+                    record_alert_event(
+                        "anomaly",
+                        f"{a['product_id']}: anomaly score {a['anomaly_score']:.4f}",
+                        {"product_id": a["product_id"], "anomaly_score": a["anomaly_score"]},
+                    )
 
             for a in payload.get("alerts", []):
-                alert_volume_spike(
+                ok = alert_volume_spike(
                     config.slack_webhook_url,
                     a["product_id"],
                     a["current_volume"],
@@ -555,9 +597,20 @@ def _alert_loop():
                     smtp_password=config.smtp_password,
                     smtp_use_tls=config.smtp_use_tls,
                 )
+                if ok:
+                    record_alert_event(
+                        "volume_spike",
+                        f"{a['product_id']}: {a['spike_ratio']:.1f}× volume vs baseline",
+                        {
+                            "product_id": a["product_id"],
+                            "spike_ratio": a["spike_ratio"],
+                            "current_volume": a["current_volume"],
+                            "baseline_volume": a["baseline_volume"],
+                        },
+                    )
 
             for pa in payload.get("price_alerts", []):
-                alert_price_threshold(
+                ok = alert_price_threshold(
                     config.slack_webhook_url,
                     pa["product_id"],
                     pa["direction"],
@@ -570,6 +623,18 @@ def _alert_loop():
                     smtp_password=config.smtp_password,
                     smtp_use_tls=config.smtp_use_tls,
                 )
+                if ok:
+                    record_alert_event(
+                        "price_threshold",
+                        f"{pa['product_id']}: ${pa['current_price']:,.2f} "
+                        f"({pa['direction']} ${pa['threshold_price']:,.2f})",
+                        {
+                            "product_id": pa["product_id"],
+                            "direction": pa["direction"],
+                            "threshold_price": pa["threshold_price"],
+                            "current_price": pa["current_price"],
+                        },
+                    )
 
         except Exception:
             log.exception("Alert loop error")
@@ -687,6 +752,56 @@ def sentiment_endpoint():
     })
 
 
+@app.route("/api/alert-settings", methods=["GET", "PUT", "OPTIONS"])
+def alert_settings():
+    """Read or update operator-tunable thresholds (persisted under data/alert_settings.json)."""
+    if request.method == "OPTIONS":
+        return "", 204
+    cfg = get_config()
+    if request.method == "GET":
+        tuning = get_alert_tuning(cfg)
+        return jsonify(
+            {
+                "settings": tuning.to_api_dict(),
+                "persisted_to_disk": saved_alert_settings_exist(),
+            }
+        )
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON object body required"}), 400
+    tuning, err = validate_tuning_payload(data, cfg)
+    if err:
+        return jsonify({"error": err}), 400
+    save_alert_tuning(tuning)
+    set_alert_cooldown_seconds(tuning.alert_cooldown_sec)
+    with _state_lock:
+        _state["anomaly_detector"] = None
+        _state.pop("anomaly_contamination_applied", None)
+    return jsonify({"ok": True, "settings": tuning.to_api_dict()})
+
+
+@app.route("/api/alert-settings/reset", methods=["POST", "OPTIONS"])
+def alert_settings_reset():
+    """Delete saved JSON and revert thresholds to environment defaults."""
+    if request.method == "OPTIONS":
+        return "", 204
+    cfg = get_config()
+    tuning = reset_alert_settings_file(cfg)
+    set_alert_cooldown_seconds(tuning.alert_cooldown_sec)
+    with _state_lock:
+        _state["anomaly_detector"] = None
+        _state.pop("anomaly_contamination_applied", None)
+    return jsonify({"ok": True, "settings": tuning.to_api_dict()})
+
+
+@app.route("/api/alert-history")
+def alert_history():
+    """Recent Slack/email notifications that were actually sent (cooldown dedup may skip some)."""
+    limit = int(request.args.get("limit", "50"))
+    limit = max(1, min(limit, 200))
+    return jsonify({"events": get_alert_history(limit)})
+
+
 @app.route("/api/dashboard")
 def dashboard():
     """Single endpoint returning all dashboard data."""
@@ -703,6 +818,8 @@ def dashboard():
 
 def main():
     get_config()
+    load_history_from_disk()
+    set_alert_cooldown_seconds(get_alert_tuning(get_config()).alert_cooldown_sec)
 
     # Store payload builder on app for AI routes
     app.config["get_dashboard_payload"] = _build_dashboard_payload
