@@ -2795,6 +2795,22 @@ body:not(.loading) .skeleton-row { display: none; }
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: var(--space-lg);
   margin-bottom: var(--space-lg);
+  align-items: stretch;
+}
+
+/* Same row height per row; inputs align to bottom when labels wrap to different line counts */
+.alert-rules-grid > .profile-field {
+  min-width: 0;
+  min-height: 100%;
+}
+
+.alert-rules-grid > .profile-field .profile-input {
+  margin-top: auto;
+}
+
+.alert-rules-grid > .profile-field label {
+  line-height: 1.35;
+  max-width: 100%;
 }
 
 .alert-rules-toggle {
